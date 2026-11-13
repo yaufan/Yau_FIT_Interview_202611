@@ -735,15 +735,20 @@ def plot_imbalance(lt):
     names = [m["config"]["name"] for m in methods]
     colors = plt.cm.tab10(np.arange(len(methods)))
     best = best_imbalance_method(methods)
-    # --- 圖 07:每個數字的 recall,只畫不處理和定案的做法,不然線太多看不清楚
-    fig, ax = plt.subplots(figsize=(8, 4.6))
-    for i, col, label in [(0, "#C44E52", "no handling (C1)"), (best, "#4C72B0", f"final method ({names[best].split()[0]})")]:
-        rec, sd = mean_std([r["test"] for r in methods[i]["runs"]], "recall")
-        ax.errorbar(range(NUM_CLASSES), rec * 100, yerr=sd * 100, marker="o", ms=5, capsize=3, lw=2, color=col, label=label)
-    ax.set(xlabel="digit (fewer training images to the right)", ylabel="test recall %", title="Recall of each digit, long-tailed training set")
-    ax.set_xticks(range(NUM_CLASSES))
-    ax.set_xticklabels([f"{c}\n({n:,})" for c, n in enumerate(lt["class_counts"])], fontsize=8)  # 數字底下標訓練張數
-    ax.legend(fontsize=10, loc="lower left"); ax.grid(alpha=0.3)
+    # --- 圖 07:每個數字認對的比例,不處理和定案的做法並排
+    fig, ax = plt.subplots(figsize=(10, 5))
+    xs = np.arange(NUM_CLASSES)
+    for k, (i, col, label) in enumerate([(0, "#C44E52", "no handling"), (best, "#4C72B0", "final method")]):
+        rec, _ = mean_std([r["test"] for r in methods[i]["runs"]], "recall")
+        bars = ax.bar(xs + (k - 0.5) * 0.4, rec * 100, 0.4, color=col, label=label)
+        for b, v in zip(bars, rec * 100):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.15, f"{v:.1f}", ha="center", fontsize=7.5)
+    ax.set_ylim(88, 101.2)
+    ax.set(xlabel="digit (number of training images)", ylabel="% of test images recognised correctly",
+           title="How well each digit is recognised when the training set is imbalanced")
+    ax.set_xticks(xs)
+    ax.set_xticklabels([f"{c}\n({n:,})" for c, n in enumerate(lt["class_counts"])], fontsize=9)
+    ax.legend(fontsize=10, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False); ax.grid(alpha=0.3, axis="y")
     savefig(fig, "07_imbalance_per_class_recall.png")
 
     # --- 圖 10:各方法的測試準確率,一個方法一條
