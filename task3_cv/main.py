@@ -400,7 +400,7 @@ def run_job(job: dict) -> dict:
     return out
 
 
-def build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs):
+def build_jobs(ep_ab, ep_lt, seeds, lt_kwargs):
     """列出所有要跑的訓練。"""
     reg = dict(use_bn=True, dropout=0.2, augment=True)  # 最後用的設定
     # Part A:一次加一個東西
@@ -418,8 +418,6 @@ def build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs):
         Config("B3 AdamW, constant LR 3e-3", optimizer="adamw", lr=PEAK_LR, schedule="const", **b),
         Config("B4 AdamW, one-cycle (peak 3e-3)", optimizer="adamw", lr=PEAK_LR, schedule="onecycle", **b),
     ]
-    # 最後的模型:A4 的設定訓練久一點
-    final = [Config("Final DigitNet", epochs=ep_final, **reg)]
     # Part C:不平衡的訓練集
     lt = dict(use_bn=True, dropout=0.2, epochs=ep_lt)
     part_c = [
@@ -429,12 +427,13 @@ def build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs):
         Config("C4 Balanced sampling + augmentation", augment=True, sampler="class_balanced", **lt),
     ]
     jobs = []
-    for group, cfgs, extra, group_seeds in [("A", part_a, {}, seeds), ("B", part_b, {}, seeds),
-                                            ("final", final, dict(final=True), seeds[:1]),
-                                            ("C", part_c, dict(longtail=lt_kwargs), seeds)]:
+    for group, cfgs, extra in [("A", part_a, {}), ("B", part_b, {}), ("C", part_c, dict(longtail=lt_kwargs))]:
         for cfg in cfgs:
-            for s in group_seeds:
-                jobs.append(dict(group=group, cfg=asdict(cfg), seed=s, **extra))
+            for s in seeds:
+                job = dict(group=group, cfg=asdict(cfg), seed=s, **extra)
+                if cfg is part_a[-1] and s == seeds[0]:
+                    job["final"] = True  # 定案的模型就是 A4,第一個 seed 的權重存下來
+                jobs.append(job)
     order = dict(A=[c.name for c in part_a], B=[c.name for c in part_b], C=[c.name for c in part_c])
     return jobs, order
 
@@ -486,8 +485,8 @@ def assemble(results, order, jobs):
         return e
 
     res = dict(part_a=[entry(n) for n in order["A"]], part_b=dict(variants=[entry(n) for n in order["B"]]))
-    f = by_name["Final DigitNet"][0]
-    res["final"] = dict(config=cfg_of["Final DigitNet"], params=count_params(DigitNet()), **f)
+    final_name = order["A"][-1]  # 定案的模型 = A4,取存了權重的那一次(第一個 seed)
+    res["final"] = dict(config=cfg_of[final_name], params=count_params(DigitNet()), **by_name[final_name][0])
     res["part_c"] = dict(methods=[entry(n) for n in order["C"]])
     return res
 
@@ -742,7 +741,7 @@ def write_summary(res):
     for e in res["part_b"]["variants"]:
         L.append(f"| {e['config']['name']} | {pm([r['history']['val_acc'][0] for r in e['runs']])} | {pm([r['val_acc'] for r in e['runs']])} | {pm([r['test_acc'] for r in e['runs']])} |")
     f = res["final"]
-    L.append(f"\n### 最終模型(完整平衡資料,{f['config']['epochs']} epochs)\n")
+    L.append(f"\n### 定案的模型(A4 的設定,存下權重的那一次,seed {f['seed']})\n")
     L.append(f"- 參數量:{f['params']:,}\n- 驗證準確率:{f['val_acc'] * 100:.2f}%\n- **測試準確率:{f['test']['accuracy'] * 100:.2f}%**"
              f"(10,000 張錯 {int(round((1 - f['test']['accuracy']) * 1e4))} 張),macro-F1 {f['test']['macro_f1'] * 100:.2f}%")
     L.append("- 各數字的 recall %:" + "、".join(f"{c}: {r * 100:.1f}" for c, r in enumerate(f["test"]["recall"])))
@@ -811,10 +810,10 @@ def main():
     else:
         t0 = time.time()
         if args.quick:
-            ep_ab, ep_final, ep_lt, seeds, n_max = 1, 1, 2, [0], 500
+            ep_ab, ep_lt, seeds, n_max = 1, 2, [0], 500
         else:
             # 長尾的資料比較少,所以多跑幾個 epoch
-            ep_ab, ep_final, ep_lt, seeds, n_max = 6, 15, 30, [0, 1, 2], 5000
+            ep_ab, ep_lt, seeds, n_max = 15, 30, [0, 1, 2], 5000
         lt_kwargs = dict(n_max=n_max, imbalance_factor=args.imbalance_factor)
         _, counts = longtail_indices(data["y_train"], seed=0, **lt_kwargs)
         print(f"long-tailed class counts for Part C: {counts} (total {sum(counts)})")
@@ -824,10 +823,10 @@ def main():
         range_test = lr_range_test(Config("lr-range", use_bn=True, dropout=0.2, augment=True), data["x_train"], data["y_train"],
                                    steps=60 if args.quick else 300)
 
-        jobs, order = build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs)
+        jobs, order = build_jobs(ep_ab, ep_lt, seeds, lt_kwargs)
         for j in jobs:
             j["subset"], j["out_dir"] = subset, str(OUT_DIR)
-        print(f"\nTraining {len(jobs)} runs (Part A: architectures, Part B: optimizers, final model, Part C: imbalance)")
+        print(f"\nTraining {len(jobs)} runs (Part A: architectures, Part B: optimizers, Part C: imbalance)")
         results = run_all(jobs, device, n_workers, args.threads)
         res = assemble(results, order, jobs)
         res["part_b"]["range_test"] = range_test

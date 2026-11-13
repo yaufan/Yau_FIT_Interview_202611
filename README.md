@@ -64,25 +64,25 @@ XGBoost 和 LightGBM 一樣好,我選 LightGBM。之後試了調參數、加 cla
 
 | | 試了什麼 | 最後用的 | 效果 |
 |---|---|---|---|
-| 模型 | LeNet-5、自己設計的 CNN、加 BN、加 dropout 和 augmentation | DigitNet + BN + dropout + augmentation | 測試錯誤 73 張降到 45 張(每一萬張) |
-| 優化 | SGD、加 momentum、AdamW、加學習率排程 | AdamW + one-cycle 排程 | 錯誤率 1.8% 降到 0.4% |
-| 類別不平衡 | class weight、平衡抽樣、平衡抽樣加 augmentation | 平衡抽樣 + augmentation | 準確率 97.5% 拉回 98.7% |
+| 模型 | LeNet-5、自己設計的 CNN、加 BN、加 dropout 和 augmentation | DigitNet + BN + dropout + augmentation | 測試錯誤 72 張降到 39 張(每一萬張) |
+| 優化 | SGD、加 momentum、AdamW、加學習率排程 | AdamW + one-cycle 排程 | 錯誤率 1.0% 降到 0.4% |
+| 類別不平衡 | class weight、平衡抽樣、平衡抽樣加 augmentation | 平衡抽樣 + augmentation | 準確率 97.4% 拉回 98.7% |
 
-定案的模型有 72,666 個參數,測試準確率 99.63%(一萬張錯 37 張)。每一組實驗的數字和圖在 [Task 3 的說明](task3_cv/README.md)裡。
+定案的模型有 72,666 個參數,測試準確率 99.66%(一萬張錯 34 張)。每一組實驗的數字和圖在 [Task 3 的說明](task3_cv/README.md)裡。
 
 類別不平衡的部分,我讓訓練資料裡數字 0 有 5,000 張,一路遞減到數字 9 只有 50 張。下表是測試時每個數字的圖有多少比例被認對:
 
 | 數字 | 訓練張數 | 不處理 | 定案的做法 |
 |---|---|---|---|
 | 0 | 5,000 | 100.0% | 100.0% |
-| 1 | 2,997 | 99.8% | 99.7% |
-| 2 | 1,797 | 99.7% | 99.9% |
-| 3 | 1,077 | 99.8% | 99.9% |
-| 4 | 646 | 99.7% | 99.7% |
-| 5 | 387 | 98.4% | 99.2% |
+| 1 | 2,997 | 99.9% | 99.7% |
+| 2 | 1,797 | 99.7% | 99.8% |
+| 3 | 1,077 | 99.8% | 99.7% |
+| 4 | 646 | 99.7% | 99.8% |
+| 5 | 387 | 98.5% | 99.2% |
 | 6 | 232 | 97.3% | 97.9% |
-| 7 | 139 | 95.2% | 98.1% |
-| 8 | 83 | 94.6% | 97.8% |
+| 7 | 139 | 94.7% | 98.1% |
+| 8 | 83 | 94.5% | 97.8% |
 | 9 | 50 | 90.4% | 95.0% |
 
 不處理的話,訓練張數多的數字幾乎全對,但張數越少認得越差,數字 9 只認對 90.4%。定案的做法是讓每個數字被抽到的機率一樣,再加上 augmentation,張數少的數字就拉回 95% 以上。
@@ -92,7 +92,7 @@ XGBoost 和 LightGBM 一樣好,我選 LightGBM。之後試了調參數、加 cla
 ```bash
 pip install -r requirements.txt
 cd task2_ml && python main.py                    # 約 1 分半
-cd ../task3_cv && python main.py --workers 3    # 有 GPU 約 5 分鐘,只有 CPU 會很久
+cd ../task3_cv && python main.py --workers 3    # 有 GPU 約 9 分鐘,只有 CPU 會很久
 ```
 
 結果我都跑好放在各題的 `outputs/` 了,不重跑也可以直接看。
