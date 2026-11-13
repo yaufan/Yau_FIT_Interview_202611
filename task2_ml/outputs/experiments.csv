@@ -1,0 +1,12 @@
+group,name,auc,fold_auc_sd,log_loss,brier,seconds
+model,Logistic regression,0.87050,0.00121,0.34417,0.10560,2.09453
+model,Random forest,0.88689,0.00146,0.32376,0.09925,13.13741
+model,XGBoost,0.88969,0.00173,0.31907,0.09790,5.87450
+model,LightGBM (final),0.88987,0.00164,0.31891,0.09784,21.51575
+setting,"LightGBM, lr 0.1",0.88932,0.00161,0.31957,0.09804,9.16983
+setting,"LightGBM, num_leaves 63",0.88952,0.00180,0.31929,0.09796,16.77564
+setting,"LightGBM, min_child_samples 20",0.88997,0.00158,0.31875,0.09780,25.38303
+setting,"LightGBM, class weight",0.88628,0.00151,0.40978,0.12617,6.17893
+features,LightGBM + engineered features,0.88957,0.00174,0.31925,0.09792,20.04001
+features,LightGBM + CustomerId + Surname,0.89166,0.00200,0.31668,0.09722,16.61000
+blend,LightGBM + XGBoost average,0.88991,0.00169,0.31881,0.09781,0.00000

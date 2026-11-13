@@ -1,0 +1,3 @@
+threshold,true_stay_pred_stay,true_stay_pred_exit,true_exit_pred_stay,true_exit_pred_exit
+threshold_0.50,123458,6655,15470,19451
+threshold_f1_optimal_crossfitted,116307,13806,10659,24262

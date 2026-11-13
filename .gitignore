@@ -218,3 +218,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MNIST is downloaded by task3_cv/main.py on first run
+task3_cv/data/
+task3_cv/outputs_quick/

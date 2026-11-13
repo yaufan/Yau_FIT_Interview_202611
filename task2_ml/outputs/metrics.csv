@@ -1,0 +1,4 @@
+model,threshold,roc_auc,pr_auc,log_loss,brier,accuracy,precision,recall,specificity,f1
+LightGBM,0.50,0.88987,0.73155,0.31891,0.09784,0.86594,0.74508,0.55700,0.94885,0.63746
+LightGBM,"F1-optimal (~0.32, cross-fitted)",0.88987,0.73155,0.31891,0.09784,0.85176,0.63733,0.69477,0.89389,0.66481
+LogReg baseline,0.50,0.87050,0.68524,0.34417,0.10560,0.85601,0.72615,0.51299,0.94808,0.60123
