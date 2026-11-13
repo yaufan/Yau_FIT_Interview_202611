@@ -1,0 +1,114 @@
+device: cuda | torch 2.12.0+cu130 | 3 worker process(es) x 4 threads
+{'x_train': (54000, 1, 28, 28), 'x_val': (6000, 1, 28, 28), 'x_test': (10000, 1, 28, 28)}
+long-tailed class counts for Part C: [5000, 2997, 1797, 1077, 646, 387, 232, 139, 83, 50] (total 12408)
+
+LR range tests
+
+Training 58 runs (Part A: architectures, Part B: optimizers, final model, Part C: imbalance)
+  [  1/58] C1 Cross-entropy (no handling)                     seed 1  val  97.42%  test  97.49%  (28s, elapsed 0.5 min)
+  [  2/58] C1 Cross-entropy (no handling)                     seed 0  val  97.42%  test  97.34%  (28s, elapsed 0.5 min)
+  [  3/58] C1 Cross-entropy (no handling)                     seed 2  val  97.37%  test  97.41%  (27s, elapsed 0.9 min)
+  [  4/58] C2 Class-weighted cross-entropy                    seed 0  val  97.73%  test  97.97%  (27s, elapsed 0.9 min)
+  [  5/58] Final DigitNet                                     seed 0  val  99.47%  test  99.64%  (73s, elapsed 1.2 min)
+  [  6/58] C2 Class-weighted cross-entropy                    seed 2  val  97.80%  test  97.85%  (27s, elapsed 1.4 min)
+  [  7/58] C2 Class-weighted cross-entropy                    seed 1  val  97.92%  test  98.01%  (27s, elapsed 1.4 min)
+  [  8/58] C3 Class-balanced sampling                         seed 0  val  97.23%  test  97.42%  (29s, elapsed 1.7 min)
+  [  9/58] C3 Class-balanced sampling                         seed 1  val  97.23%  test  97.31%  (29s, elapsed 1.9 min)
+  [ 10/58] C3 Class-balanced sampling                         seed 2  val  97.13%  test  97.42%  (29s, elapsed 1.9 min)
+  [ 11/58] C4 Focal loss (gamma=2)                            seed 0  val  97.17%  test  97.37%  (30s, elapsed 2.2 min)
+  [ 12/58] C4 Focal loss (gamma=2)                            seed 2  val  97.37%  test  97.55%  (30s, elapsed 2.4 min)
+  [ 13/58] C4 Focal loss (gamma=2)                            seed 1  val  97.18%  test  97.57%  (30s, elapsed 2.4 min)
+  [ 14/58] C5 Logit-adjusted loss (tau=1)                     seed 0  val  98.13%  test  98.33%  (29s, elapsed 2.7 min)
+  [ 15/58] C5 Logit-adjusted loss (tau=1)                     seed 1  val  98.38%  test  98.70%  (29s, elapsed 2.8 min)
+  [ 16/58] C5 Logit-adjusted loss (tau=1)                     seed 2  val  98.07%  test  98.49%  (29s, elapsed 2.9 min)
+  [ 17/58] C6 Class-balanced sampling + augmentation          seed 0  val  98.52%  test  98.60%  (32s, elapsed 3.2 min)
+  [ 18/58] C6 Class-balanced sampling + augmentation          seed 1  val  98.58%  test  98.79%  (32s, elapsed 3.4 min)
+  [ 19/58] C6 Class-balanced sampling + augmentation          seed 2  val  98.53%  test  98.76%  (31s, elapsed 3.4 min)
+  [ 20/58] C7 Logit-adjusted loss + augmentation              seed 0  val  98.65%  test  98.77%  (31s, elapsed 3.8 min)
+  [ 21/58] C7 Logit-adjusted loss + augmentation              seed 1  val  98.90%  test  99.03%  (31s, elapsed 3.9 min)
+  [ 22/58] C7 Logit-adjusted loss + augmentation              seed 2  val  98.80%  test  98.99%  (31s, elapsed 3.9 min)
+  [ 23/58] A2 DigitNet, no BN                                 seed 0  val  99.13%  test  99.17%  (20s, elapsed 4.1 min)
+  [ 24/58] A2 DigitNet, no BN                                 seed 1  val  98.95%  test  99.14%  (19s, elapsed 4.2 min)
+  [ 25/58] A2 DigitNet, no BN                                 seed 2  val  98.92%  test  99.14%  (19s, elapsed 4.2 min)
+  [ 26/58] A3 DigitNet + BN                                   seed 0  val  99.47%  test  99.53%  (22s, elapsed 4.5 min)
+  [ 27/58] A3 DigitNet + BN                                   seed 1  val  99.47%  test  99.57%  (22s, elapsed 4.6 min)
+  [ 28/58] A3 DigitNet + BN                                   seed 2  val  99.52%  test  99.58%  (22s, elapsed 4.6 min)
+  [ 29/58] A4 DigitNet + BN + dropout + augmentation          seed 0  val  99.53%  test  99.55%  (25s, elapsed 4.9 min)
+  [ 30/58] A4 DigitNet + BN + dropout + augmentation          seed 1  val  99.47%  test  99.59%  (24s, elapsed 5.0 min)
+  [ 31/58] A4 DigitNet + BN + dropout + augmentation          seed 2  val  99.47%  test  99.56%  (24s, elapsed 5.0 min)
+  [ 32/58] B1 SGD, constant LR 0.05                           seed 0  val  97.25%  test  97.71%  (24s, elapsed 5.3 min)
+  [ 33/58] B1 SGD, constant LR 0.05                           seed 1  val  97.88%  test  98.53%  (24s, elapsed 5.4 min)
+  [ 34/58] B1 SGD, constant LR 0.05                           seed 2  val  97.97%  test  98.15%  (24s, elapsed 5.4 min)
+  [ 35/58] B2 SGD + momentum, constant LR 0.05                seed 0  val  98.72%  test  98.53%  (24s, elapsed 5.7 min)
+  [ 36/58] B2 SGD + momentum, constant LR 0.05                seed 1  val  99.03%  test  99.04%  (24s, elapsed 5.8 min)
+  [ 37/58] B2 SGD + momentum, constant LR 0.05                seed 2  val  98.82%  test  99.16%  (24s, elapsed 5.8 min)
+  [ 38/58] B3 SGD + momentum, constant LR 0.2                 seed 0  val  98.83%  test  99.00%  (24s, elapsed 6.1 min)
+  [ 39/58] B3 SGD + momentum, constant LR 0.2                 seed 1  val  98.17%  test  98.22%  (24s, elapsed 6.2 min)
+  [ 40/58] B3 SGD + momentum, constant LR 0.2                 seed 2  val  98.30%  test  98.14%  (24s, elapsed 6.2 min)
+  [ 41/58] B4 SGD + momentum, one-cycle (peak 0.2)            seed 0  val  99.45%  test  99.59%  (24s, elapsed 6.5 min)
+  [ 42/58] B4 SGD + momentum, one-cycle (peak 0.2)            seed 1  val  99.52%  test  99.59%  (24s, elapsed 6.6 min)
+  [ 43/58] B4 SGD + momentum, one-cycle (peak 0.2)            seed 2  val  99.55%  test  99.54%  (24s, elapsed 6.6 min)
+  [ 44/58] B5 Adam, constant LR 1e-3                          seed 0  val  98.80%  test  99.21%  (25s, elapsed 6.9 min)
+  [ 45/58] B5 Adam, constant LR 1e-3                          seed 1  val  98.98%  test  99.13%  (25s, elapsed 7.0 min)
+  [ 46/58] B5 Adam, constant LR 1e-3                          seed 2  val  98.58%  test  98.60%  (25s, elapsed 7.0 min)
+  [ 47/58] B6 AdamW, constant LR 1e-3                         seed 0  val  98.63%  test  99.06%  (24s, elapsed 7.3 min)
+  [ 48/58] B6 AdamW, constant LR 1e-3                         seed 1  val  99.07%  test  99.24%  (24s, elapsed 7.4 min)
+  [ 49/58] B6 AdamW, constant LR 1e-3                         seed 2  val  98.43%  test  98.71%  (24s, elapsed 7.4 min)
+  [ 50/58] B7 AdamW, constant LR 3e-3                         seed 0  val  98.80%  test  98.95%  (25s, elapsed 7.7 min)
+  [ 51/58] B7 AdamW, constant LR 3e-3                         seed 1  val  98.77%  test  99.00%  (24s, elapsed 7.8 min)
+  [ 52/58] B7 AdamW, constant LR 3e-3                         seed 2  val  97.70%  test  97.57%  (25s, elapsed 7.8 min)
+  [ 53/58] B8 AdamW, one-cycle (peak 3e-3)                    seed 0  val  99.53%  test  99.53%  (24s, elapsed 8.1 min)
+  [ 54/58] B8 AdamW, one-cycle (peak 3e-3)                    seed 1  val  99.42%  test  99.57%  (23s, elapsed 8.2 min)
+  [ 55/58] B8 AdamW, one-cycle (peak 3e-3)                    seed 2  val  99.52%  test  99.43%  (23s, elapsed 8.2 min)
+  [ 56/58] A1 LeNet-5 (baseline)                              seed 0  val  99.07%  test  99.29%  (11s, elapsed 8.3 min)
+  [ 57/58] A1 LeNet-5 (baseline)                              seed 2  val  99.05%  test  99.26%  (7s, elapsed 8.3 min)
+  [ 58/58] A1 LeNet-5 (baseline)                              seed 1  val  99.07%  test  99.25%  (8s, elapsed 8.3 min)
+Best imbalance method by validation balanced accuracy: C7 Logit-adjusted loss + augmentation
+
+由 `python main.py` 產生;裝置 cuda(3 個行程,torch 2.12.0+cu130),共 8.4 分鐘。
+
+### Part A - 模型設計(6 epochs,AdamW + one-cycle,3 個種子的平均 ± 標準差)
+
+| 模型 | 參數量 | 驗證準確率 % | 測試準確率 % | 測試錯誤數 / 10,000 |
+|---|---:|---:|---:|---:|
+| A1 LeNet-5 (baseline) | 61,706 | 99.06 ± 0.01 | 99.27 ± 0.02 | 73 |
+| A2 DigitNet, no BN | 72,442 | 99.00 ± 0.12 | 99.15 ± 0.02 | 85 |
+| A3 DigitNet + BN | 72,666 | 99.48 ± 0.03 | 99.56 ± 0.03 | 44 |
+| A4 DigitNet + BN + dropout + augmentation | 72,666 | 99.49 ± 0.04 | 99.57 ± 0.02 | 43 |
+
+### Part B - 優化(DigitNet,6 epochs,3 個種子的平均 ± 標準差)
+
+| 優化器 / 學習率排程 | 第 1 個 epoch 後驗證準確率 % | 最終驗證準確率 % | 測試準確率 % |
+|---|---:|---:|---:|
+| B1 SGD, constant LR 0.05 | 91.01 ± 2.55 | 97.70 ± 0.39 | 98.13 ± 0.41 |
+| B2 SGD + momentum, constant LR 0.05 | 97.04 ± 0.72 | 98.86 ± 0.16 | 98.91 ± 0.33 |
+| B3 SGD + momentum, constant LR 0.2 | 96.99 ± 0.63 | 98.43 ± 0.35 | 98.45 ± 0.48 |
+| B4 SGD + momentum, one-cycle (peak 0.2) | 85.41 ± 17.47 | 99.51 ± 0.05 | 99.57 ± 0.03 |
+| B5 Adam, constant LR 1e-3 | 97.11 ± 0.66 | 98.79 ± 0.20 | 98.98 ± 0.33 |
+| B6 AdamW, constant LR 1e-3 | 97.54 ± 0.38 | 98.71 ± 0.32 | 99.00 ± 0.27 |
+| B7 AdamW, constant LR 3e-3 | 98.01 ± 0.42 | 98.42 ± 0.63 | 98.51 ± 0.81 |
+| B8 AdamW, one-cycle (peak 3e-3) | 96.84 ± 0.69 | 99.49 ± 0.06 | 99.51 ± 0.07 |
+
+### 最終模型(完整平衡資料,15 epochs)
+
+- 參數量:72,666
+- 驗證準確率:99.47%
+- **測試準確率:99.64%**(10,000 張錯 36 張),macro-F1 99.64%
+- 各數字的 recall %:0: 99.8、1: 99.7、2: 99.7、3: 99.8、4: 99.7、5: 99.4、6: 99.6、7: 99.6、8: 99.6、9: 99.4
+
+### Part C - 類別不平衡(各類訓練張數 [5000, 2997, 1797, 1077, 646, 387, 232, 139, 83, 50],30 epochs,3 個種子的平均 ± 標準差;「驗證」欄用來選方法,其餘各欄是官方測試集)
+
+| 方法 | 驗證 balanced acc. % | 測試準確率 % | Macro-F1 % | 頭部 recall %(0-2) | 中段 recall %(3-6) | 尾部 recall %(7-9) | 數字 9 的 recall % |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| C1 Cross-entropy (no handling) | 97.40 ± 0.03 | 97.41 ± 0.08 | 97.39 ± 0.07 | 99.88 ± 0.03 | 98.71 ± 0.24 | 93.16 ± 0.06 | 90.35 ± 0.47 |
+| C1b Cross-entropy + post-hoc logit adjustment | 98.31 ± 0.08 | 98.49 ± 0.11 | 98.47 ± 0.11 | 99.66 ± 0.11 | 98.95 ± 0.12 | 96.65 ± 0.41 | 95.21 ± 0.51 |
+| C2 Class-weighted cross-entropy | 97.82 ± 0.09 | 97.94 ± 0.08 | 97.92 ± 0.09 | 99.76 ± 0.02 | 98.86 ± 0.08 | 94.87 ± 0.17 | 92.01 ± 0.32 |
+| C3 Class-balanced sampling | 97.20 ± 0.06 | 97.38 ± 0.06 | 97.35 ± 0.07 | 99.82 ± 0.07 | 98.80 ± 0.15 | 93.00 ± 0.37 | 90.16 ± 0.99 |
+| C4 Focal loss (gamma=2) | 97.24 ± 0.11 | 97.50 ± 0.11 | 97.47 ± 0.12 | 99.90 ± 0.02 | 98.72 ± 0.10 | 93.39 ± 0.30 | 90.88 ± 1.01 |
+| C5 Logit-adjusted loss (tau=1) | 98.19 ± 0.17 | 98.51 ± 0.19 | 98.49 ± 0.19 | 99.80 ± 0.11 | 98.95 ± 0.06 | 96.58 ± 0.53 | 94.45 ± 0.88 |
+| C6 Class-balanced sampling + augmentation | 98.54 ± 0.03 | 98.72 ± 0.10 | 98.71 ± 0.11 | 99.85 ± 0.03 | 99.15 ± 0.09 | 96.97 ± 0.33 | 95.14 ± 0.77 |
+| C7 Logit-adjusted loss + augmentation | 98.78 ± 0.13 | 98.93 ± 0.14 | 98.92 ± 0.14 | 99.65 ± 0.08 | 99.14 ± 0.20 | 97.90 ± 0.22 | 96.56 ± 0.21 |
+
+依驗證集 balanced accuracy 選出的最佳方法:**C7 Logit-adjusted loss + augmentation**
+
+All outputs are in task3_cv/outputs
