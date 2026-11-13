@@ -2,8 +2,8 @@
 
 分三組實驗:
   Part A  模型:LeNet-5 -> DigitNet -> 加 BN -> 加 dropout 和 augmentation
-  Part B  優化:LR range test,比較 SGD / momentum / Adam / AdamW 和學習率排程
-  Part C  類別不平衡:做一份 100:1 的長尾訓練集,比較幾種處理方法
+  Part B  優化:SGD、momentum、AdamW,固定學習率和 one-cycle 排程
+  Part C  類別不平衡:做一份 100:1 的訓練集,比較 class weight、平衡抽樣、加 augmentation
 
 用法:
     python main.py              # 全部跑完(第一次會下載 MNIST)
@@ -43,7 +43,7 @@ NUM_CLASSES = 10
 # Part C 看結果用的分組
 HEAD, MID, TAIL = [0, 1, 2], [3, 4, 5, 6], [7, 8, 9]
 # one-cycle 的最高學習率,從 LR range test 看出來的
-PEAK_LR_ADAMW, PEAK_LR_SGD = 3e-3, 0.2
+PEAK_LR = 3e-3
 
 
 # ======================================================================================
@@ -163,17 +163,15 @@ class Config:
     dropout: float = 0.2
     augment: bool = True
     # --- 優化
-    optimizer: str = "adamw"  # "sgd" | "sgdm" | "adam" | "adamw"
-    lr: float = PEAK_LR_ADAMW  # onecycle 的話是最高的學習率
+    optimizer: str = "adamw"  # "sgd" | "sgdm" | "adamw"
+    lr: float = PEAK_LR  # onecycle 的話是最高的學習率
     weight_decay: float | None = None  # None 的話看 build_optimizer
     schedule: str = "onecycle"  # "const" | "onecycle"
     epochs: int = 6
     batch_size: int = 128
     # --- Part C 用的
-    loss: str = "ce"  # "ce" | "weighted_ce" | "focal" | "logit_adjusted"
+    loss: str = "ce"  # "ce" | "weighted_ce"
     sampler: str = "shuffle"  # "shuffle" | "class_balanced"
-    focal_gamma: float = 2.0
-    la_tau: float = 1.0
 
 
 def build_model(cfg: Config) -> nn.Module:
@@ -184,7 +182,7 @@ def build_model(cfg: Config) -> nn.Module:
 
 def build_optimizer(cfg: Config, model: nn.Module):
     """weight decay 只加在 conv / linear 的 weight,BN 和 bias 不加。
-    AdamW 的 decay 是直接乘在權重上,跟 SGD / Adam 的 L2 大小不能直接比,所以預設值分開(5e-2 和 5e-4)。"""
+    AdamW 的 decay 是直接乘在權重上,跟 SGD 的 L2 大小不能直接比,所以預設值分開(5e-2 和 5e-4)。"""
     wd = cfg.weight_decay if cfg.weight_decay is not None else (5e-2 if cfg.optimizer == "adamw" else 5e-4)
     decay = [p for p in model.parameters() if p.ndim > 1]
     no_decay = [p for p in model.parameters() if p.ndim <= 1]
@@ -193,8 +191,6 @@ def build_optimizer(cfg: Config, model: nn.Module):
         return torch.optim.SGD(groups, lr=cfg.lr)
     if cfg.optimizer == "sgdm":
         return torch.optim.SGD(groups, lr=cfg.lr, momentum=0.9, nesterov=True)
-    if cfg.optimizer == "adam":
-        return torch.optim.Adam(groups, lr=cfg.lr)
     if cfg.optimizer == "adamw":
         return torch.optim.AdamW(groups, lr=cfg.lr)
     raise ValueError(cfg.optimizer)
@@ -202,26 +198,13 @@ def build_optimizer(cfg: Config, model: nn.Module):
 
 def build_criterion(cfg: Config, class_counts: torch.Tensor):
     """Part C 的 loss。class_counts 是訓練集各類別的張數。"""
-    counts = class_counts.float()
-    prior = counts / counts.sum()  # 各類別佔的比例
     if cfg.loss == "ce":
         return lambda logits, y: F.cross_entropy(logits, y)
     if cfg.loss == "weighted_ce":
-        # 權重跟類別數量成反比。cross_entropy 會除以權重總和,loss 的大小不會差太多
-        w = 1.0 / counts
+        # 權重跟類別數量成反比,少的類別錯了罰比較重
+        w = 1.0 / class_counts.float()
         w = w / w.sum() * NUM_CLASSES
         return lambda logits, y: F.cross_entropy(logits, y, weight=w)
-    if cfg.loss == "focal":
-        # 用 (1 - p_t)^gamma 把已經分對的樣本權重壓低
-        def focal(logits, y):
-            logp = F.log_softmax(logits, 1).gather(1, y[:, None]).squeeze(1)
-            return (-(1 - logp.exp()) ** cfg.focal_gamma * logp).mean()
-
-        return focal
-    if cfg.loss == "logit_adjusted":
-        # 訓練時 logit 加上 tau * log(類別比例),預測時用原本的 logit
-        log_prior = prior.log()
-        return lambda logits, y: F.cross_entropy(logits + cfg.la_tau * log_prior, y)
     raise ValueError(cfg.loss)
 
 
@@ -405,19 +388,12 @@ def run_job(job: dict) -> dict:
     out = dict(group=job["group"], name=cfg.name, seed=job["seed"], history=slim(hist), val_acc=hist["val_acc"][-1],
                val=classification_metrics(val_logits, y_val), test=classification_metrics(logits, y_test))
     out["test_acc"] = out["test"]["accuracy"]
-    if job.get("posthoc"):
-        # C1b:同一個模型,logit 減掉 log(類別比例) 再預測
-        prior = torch.bincount(y_tr, minlength=NUM_CLASSES).float()
-        log_prior = (prior / prior.sum()).log()
-        out["posthoc_val"] = classification_metrics(val_logits - log_prior, y_val)
-        out["posthoc_test"] = classification_metrics(logits - log_prior, y_test)
     if job.get("final"):
-        # 記下信心最高的錯誤和信心分布,畫圖用
+        # 記下信心最高的錯誤,畫圖用
         conf, pred = logits.softmax(1).max(1)
         wrong = (pred != y_test).nonzero().squeeze(1)
         wrong = wrong[conf[wrong].argsort(descending=True)][:24]
-        out["wrong"] = dict(index=wrong.tolist(), pred=pred[wrong].tolist(), true=y_test[wrong].tolist(), conf=conf[wrong].tolist())
-        out["confidence"] = dict(correct=conf[pred == y_test].tolist()[::10], wrong=conf[pred != y_test].tolist())
+        out["wrong"] = dict(index=wrong.tolist(), pred=pred[wrong].tolist(), true=y_test[wrong].tolist())
         # 轉成 CPU 再存,沒有 GPU 也能 load
         torch.save({k: v.cpu() for k, v in model.state_dict().items()}, Path(job["out_dir"]) / "digitnet_final.pt")
     out["seconds"] = time.time() - t0
@@ -434,30 +410,23 @@ def build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs):
         Config("A3 DigitNet + BN", use_bn=True, dropout=0.0, augment=False, epochs=ep_ab),
         Config("A4 DigitNet + BN + dropout + augmentation", epochs=ep_ab, **reg),
     ]
-    # Part B:模型固定用 A4。B3、B7 是 B4、B8 的對照組(最高學習率一樣,但固定不變)
+    # Part B:模型固定用 A4。B3 和 B4 的最高學習率一樣,只差在有沒有排程
     b = dict(epochs=ep_ab, **reg)
     part_b = [
         Config("B1 SGD, constant LR 0.05", optimizer="sgd", lr=0.05, schedule="const", **b),
         Config("B2 SGD + momentum, constant LR 0.05", optimizer="sgdm", lr=0.05, schedule="const", **b),
-        Config("B3 SGD + momentum, constant LR 0.2", optimizer="sgdm", lr=PEAK_LR_SGD, schedule="const", **b),
-        Config("B4 SGD + momentum, one-cycle (peak 0.2)", optimizer="sgdm", lr=PEAK_LR_SGD, schedule="onecycle", **b),
-        Config("B5 Adam, constant LR 1e-3", optimizer="adam", lr=1e-3, schedule="const", **b),
-        Config("B6 AdamW, constant LR 1e-3", optimizer="adamw", lr=1e-3, schedule="const", **b),
-        Config("B7 AdamW, constant LR 3e-3", optimizer="adamw", lr=PEAK_LR_ADAMW, schedule="const", **b),
-        Config("B8 AdamW, one-cycle (peak 3e-3)", optimizer="adamw", lr=PEAK_LR_ADAMW, schedule="onecycle", **b),
+        Config("B3 AdamW, constant LR 3e-3", optimizer="adamw", lr=PEAK_LR, schedule="const", **b),
+        Config("B4 AdamW, one-cycle (peak 3e-3)", optimizer="adamw", lr=PEAK_LR, schedule="onecycle", **b),
     ]
     # 最後的模型:A4 的設定訓練久一點
     final = [Config("Final DigitNet", epochs=ep_final, **reg)]
-    # Part C:長尾訓練集
+    # Part C:不平衡的訓練集
     lt = dict(use_bn=True, dropout=0.2, epochs=ep_lt)
     part_c = [
-        Config("C1 Cross-entropy (no handling)", augment=False, **lt),
-        Config("C2 Class-weighted cross-entropy", augment=False, loss="weighted_ce", **lt),
-        Config("C3 Class-balanced sampling", augment=False, sampler="class_balanced", **lt),
-        Config("C4 Focal loss (gamma=2)", augment=False, loss="focal", **lt),
-        Config("C5 Logit-adjusted loss (tau=1)", augment=False, loss="logit_adjusted", **lt),
-        Config("C6 Class-balanced sampling + augmentation", augment=True, sampler="class_balanced", **lt),
-        Config("C7 Logit-adjusted loss + augmentation", augment=True, loss="logit_adjusted", **lt),
+        Config("C1 No handling", augment=False, **lt),
+        Config("C2 Class weight", augment=False, loss="weighted_ce", **lt),
+        Config("C3 Balanced sampling", augment=False, sampler="class_balanced", **lt),
+        Config("C4 Balanced sampling + augmentation", augment=True, sampler="class_balanced", **lt),
     ]
     jobs = []
     for group, cfgs, extra, group_seeds in [("A", part_a, {}, seeds), ("B", part_b, {}, seeds),
@@ -465,10 +434,7 @@ def build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs):
                                             ("C", part_c, dict(longtail=lt_kwargs), seeds)]:
         for cfg in cfgs:
             for s in group_seeds:
-                job = dict(group=group, cfg=asdict(cfg), seed=s, **extra)
-                if cfg.name.startswith("C1"):
-                    job["posthoc"] = True  # C1 順便算 C1b
-                jobs.append(job)
+                jobs.append(dict(group=group, cfg=asdict(cfg), seed=s, **extra))
     order = dict(A=[c.name for c in part_a], B=[c.name for c in part_b], C=[c.name for c in part_c])
     return jobs, order
 
@@ -522,26 +488,8 @@ def assemble(results, order, jobs):
     res = dict(part_a=[entry(n) for n in order["A"]], part_b=dict(variants=[entry(n) for n in order["B"]]))
     f = by_name["Final DigitNet"][0]
     res["final"] = dict(config=cfg_of["Final DigitNet"], params=count_params(DigitNet()), **f)
-    methods = []
-    for n in order["C"]:
-        methods.append(entry(n))
-        if n.startswith("C1"):
-            # C1b 是 C1 的模型換預測方式,沒有自己的訓練曲線
-            cfg = dict(cfg_of[n], name="C1b Cross-entropy + post-hoc logit adjustment")
-            methods.append(dict(config=cfg, runs=[dict(seed=r["seed"], val=r["posthoc_val"], test=r["posthoc_test"], history=None)
-                                                  for r in by_name[n]]))
-    res["part_c"] = dict(methods=methods)
+    res["part_c"] = dict(methods=[entry(n) for n in order["C"]])
     return res
-
-
-def lr_range_tests(data, quick):
-    base = dict(use_bn=True, dropout=0.2, augment=True)
-    steps = 60 if quick else 300
-    return {
-        "AdamW": lr_range_test(Config("lr-range AdamW", optimizer="adamw", **base), data["x_train"], data["y_train"], steps=steps),
-        "SGD + momentum": lr_range_test(Config("lr-range SGDm", optimizer="sgdm", **base), data["x_train"], data["y_train"],
-                                        lr_min=1e-4, lr_max=10.0, steps=steps),
-    }
 
 
 # ======================================================================================
@@ -629,15 +577,13 @@ def plot_training_comparison(entries, title, fname):
     savefig(fig, fname)
 
 
-def plot_lr(range_tests, variants):
-    """圖 03。左:學習率範圍測試;右:Part B 實際比較的學習率排程。"""
+def plot_lr(range_test, variants):
+    """圖 03。左:LR range test;右:Part B 用到的學習率排程。"""
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.2))
-    for name, rt in range_tests.items():
-        axes[0].plot(rt["lr"], rt["loss"], label=name)
-    axes[0].axvline(PEAK_LR_ADAMW, color="C0", ls="--", lw=1, label=f"chosen peak LR, AdamW ({PEAK_LR_ADAMW:g})")
-    axes[0].axvline(PEAK_LR_SGD, color="C1", ls="--", lw=1, label=f"chosen peak LR, SGD+momentum ({PEAK_LR_SGD:g})")
-    axes[0].set(xscale="log", xlabel="learning rate (log scale)", ylabel="training loss (EMA)", title="LR range test", ylim=(0, 3))
-    axes[0].legend(fontsize=8); axes[0].grid(alpha=0.3, which="both")
+    axes[0].plot(range_test["lr"], range_test["loss"], label="AdamW")
+    axes[0].axvline(PEAK_LR, color="C3", ls="--", lw=1, label=f"chosen peak LR ({PEAK_LR:g})")
+    axes[0].set(xscale="log", xlabel="learning rate (log scale)", ylabel="training loss", title="LR range test", ylim=(0, 3))
+    axes[0].legend(fontsize=9); axes[0].grid(alpha=0.3, which="both")
     # 排程一樣的畫成同一條線(例如 B1、B2),不然會疊在一起
     groups = {}
     for e in variants:
@@ -649,8 +595,8 @@ def plot_lr(range_tests, variants):
         label = f"{ids}: " + (f"one-cycle, peak {lr:g}" if schedule == "onecycle" else f"constant {lr:g}")
         axes[1].plot(np.arange(len(h["step_lr"])) * h["step_every"], h["step_lr"], label=label,
                      ls="-" if schedule == "onecycle" else "--")
-    axes[1].set(yscale="log", xlabel="training step", ylabel="learning rate (log scale)", title="Learning-rate schedules compared in Part B")
-    axes[1].legend(fontsize=7.5); axes[1].grid(alpha=0.3, which="both")
+    axes[1].set(yscale="log", xlabel="training step", ylabel="learning rate (log scale)", title="Learning-rate schedules in Part B")
+    axes[1].legend(fontsize=9); axes[1].grid(alpha=0.3, which="both")
     savefig(fig, "03_lr_range_test_and_schedules.png")
 
 
@@ -683,22 +629,17 @@ def plot_confusion(ax, cm, title, normalise=True, vmax=None):
 
 
 def plot_final(final, data):
-    """圖 05:最終模型的學習曲線與信心分布。圖 06:測試集混淆矩陣與最有把握的錯誤。"""
+    """圖 05:最後模型的學習曲線。圖 06:測試集的 confusion matrix 和信心最高的錯誤。"""
     h, t = final["history"], final["test"]
-    fig, axes = plt.subplots(1, 3, figsize=(17, 4.6))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
     axes[0].plot(h["epoch"], h["train_loss"], marker="o", ms=3, label="train (augmented, dropout on)")
     axes[0].plot(h["epoch"], h["val_loss"], marker="o", ms=3, label="validation")
     axes[0].set(xlabel="epoch", ylabel="cross-entropy loss", yscale="log", title="Final model: loss")
     axes[1].plot(h["epoch"], 100 * (1 - np.array(h["train_acc"])), marker="o", ms=3, label="train (augmented, dropout on)")
     axes[1].plot(h["epoch"], 100 * (1 - np.array(h["val_acc"])), marker="o", ms=3, label="validation")
     axes[1].set(xlabel="epoch", ylabel="error % (log scale)", yscale="log", title="Final model: error rate")
-    for ax in axes[:2]:
-        ax.legend(fontsize=8); ax.grid(alpha=0.3, which="both")
-    bins = np.linspace(0, 1, 26)
-    axes[2].hist(final["confidence"]["correct"], bins=bins, alpha=0.6, density=True, label="correct predictions")
-    axes[2].hist(final["confidence"]["wrong"], bins=bins, alpha=0.6, density=True, label=f"wrong predictions (n={len(final['confidence']['wrong'])})")
-    axes[2].set(xlabel="confidence (max softmax probability)", ylabel="density (log scale)", yscale="log", title="Test set: confidence of correct vs. wrong predictions")
-    axes[2].legend(fontsize=8)
+    for ax in axes:
+        ax.legend(fontsize=9); ax.grid(alpha=0.3, which="both")
     savefig(fig, "05_final_learning_curves.png")
 
     fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.6), width_ratios=[1, 1.05])
@@ -730,12 +671,25 @@ def best_imbalance_method(methods) -> int:
 
 
 def plot_imbalance(lt):
-    """圖 07-10:Part C 的結果。"""
+    """圖 07-09:Part C 的結果。"""
     methods = lt["methods"]
     names = [m["config"]["name"] for m in methods]
-    colors = plt.cm.tab10(np.arange(len(methods)))
     best = best_imbalance_method(methods)
-    # --- 圖 07:每個數字認對的比例,不處理和定案的做法並排
+    # --- 圖 07:各方法的測試準確率
+    fig, ax = plt.subplots(figsize=(8, 3.2))
+    acc = np.array([[r["test"]["accuracy"] for r in m["runs"]] for m in methods]) * 100
+    sd = acc.std(1, ddof=1) if acc.shape[1] > 1 else np.zeros(len(methods))
+    order = np.arange(len(methods))[::-1]
+    bar_colors = ["#4C72B0" if i == best else "#C44E52" if i == 0 else "#BBBBBB" for i in order]
+    ax.barh([names[i] for i in order], acc.mean(1)[order], xerr=sd[order], color=bar_colors, capsize=2)
+    for y, i in enumerate(order):
+        ax.text(acc.mean(1)[i] + sd[i] + 0.04, y, f"{acc.mean(1)[i]:.2f}", va="center", fontsize=9)
+    ax.set_xlim(acc.mean(1).min() - 0.5, acc.mean(1).max() + 0.6)
+    ax.set(xlabel="test accuracy %", title="Imbalanced training set: test accuracy of each method")
+    ax.grid(alpha=0.3, axis="x")
+    savefig(fig, "07_imbalance_methods.png")
+
+    # --- 圖 08:每個數字認對的比例,不處理和定案的做法並排
     fig, ax = plt.subplots(figsize=(10, 5))
     xs = np.arange(NUM_CLASSES)
     for k, (i, col, label) in enumerate([(0, "#C44E52", "no handling"), (best, "#4C72B0", "final method")]):
@@ -749,46 +703,17 @@ def plot_imbalance(lt):
     ax.set_xticks(xs)
     ax.set_xticklabels([f"{c}\n({n:,})" for c, n in enumerate(lt["class_counts"])], fontsize=9)
     ax.legend(fontsize=10, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False); ax.grid(alpha=0.3, axis="y")
-    savefig(fig, "07_imbalance_per_class_recall.png")
+    savefig(fig, "08_imbalance_per_digit.png")
 
-    # --- 圖 10:各方法的測試準確率,一個方法一條
-    fig, ax = plt.subplots(figsize=(8, 4.2))
-    acc = np.array([[r["test"]["accuracy"] for r in m["runs"]] for m in methods]) * 100
-    order = np.arange(len(methods))[::-1]
-    bar_colors = ["#4C72B0" if i == best else "#C44E52" if i == 0 else "#BBBBBB" for i in order]
-    ax.barh([names[i] for i in order], acc.mean(1)[order], xerr=acc.std(1, ddof=1)[order] if acc.shape[1] > 1 else None,
-            color=bar_colors, capsize=2)
-    for y, i in enumerate(order):
-        ax.text(acc.mean(1)[i] + (acc.std(1, ddof=1)[i] if acc.shape[1] > 1 else 0) + 0.04, y, f"{acc.mean(1)[i]:.2f}", va="center", fontsize=9)
-    ax.set_xlim(acc.mean(1).min() - 0.5, acc.mean(1).max() + 0.6)
-    ax.set(xlabel="test accuracy %", title="Long-tailed training set: test accuracy of each method")
-    ax.grid(alpha=0.3, axis="x")
-    savefig(fig, "10_imbalance_methods.png")
-
-    # --- 圖 08:驗證曲線(C1b 沒有訓練過程,所以沒有曲線)
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.4))
-    for m, col in zip(methods, colors):
-        if m["runs"][0]["history"] is None:
-            continue
-        hs = [r["history"] for r in m["runs"]]
-        for ax, key in zip(axes, ["val_bal_acc", "val_tail_recall"]):
-            v, _ = mean_std(hs, key)
-            ax.plot(hs[0]["epoch"], 100 * (1 - v), color=col, label=m["config"]["name"])
-    axes[0].set(xlabel="epoch", ylabel="validation error % (log scale)", yscale="log", title="Balanced validation set: overall error")
-    axes[1].set(xlabel="epoch", ylabel="1 - recall on digits 7-9, % (log scale)", yscale="log", title="Balanced validation set: tail-class error")
-    for ax in axes:
-        ax.grid(alpha=0.3, which="both"); ax.legend(fontsize=7.5)
-    savefig(fig, "08_imbalance_validation_curves.png")
-
-    # --- 圖 09:基準(C1)與最佳方法的測試集混淆矩陣;「最佳」是用驗證集選的
+    # --- 圖 09:不處理和定案做法的 confusion matrix(定案是用驗證集選的)
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.6))
     cms = [np.sum([r["test"]["confusion"] for r in methods[i]["runs"]], axis=0) for i in (0, best)]
     vmax = max(offdiag_max(cm) for cm in cms)  # 兩張圖用同一個色階
     for ax, i, cm in zip(axes, [0, best], cms):
         n_err = int(cm.sum() - np.trace(cm))
         plot_confusion(ax, cm, f"{names[i]}\nsum over {len(methods[i]['runs'])} seeds: {n_err} errors; diagonal = recall %, off-diagonal = errors", vmax=vmax)
-    fig.suptitle("Long-tailed training, test-set confusion (both panels use the same colour scale)", fontsize=10)
-    savefig(fig, "09_imbalance_confusion_baseline_vs_best.png")
+    fig.suptitle("Imbalanced training set, test-set confusion (both panels use the same colour scale)", fontsize=10)
+    savefig(fig, "09_imbalance_confusion.png")
     return names[best]
 
 
@@ -824,11 +749,16 @@ def write_summary(res):
     lt = res["part_c"]
     L.append(f"\n### Part C - 類別不平衡(各類訓練張數 {lt['class_counts']},{lt['methods'][0]['config']['epochs']} epochs,"
              f"{len(lt['methods'][0]['runs'])} 個種子的平均 ± 標準差;「驗證」欄用來選方法,其餘各欄是官方測試集)\n")
-    L.append("| 方法 | 驗證 balanced acc. % | 測試準確率 % | Macro-F1 % | 頭部 recall %(0-2) | 中段 recall %(3-6) | 尾部 recall %(7-9) | 數字 9 的 recall % |\n|---|---:|---:|---:|---:|---:|---:|---:|")
+    L.append("| 方法 | 驗證 balanced acc. % | 測試準確率 % | 張數多的數字(0-2)認對 % | 張數少的數字(7-9)認對 % | 數字 9 認對 % |\n|---|---:|---:|---:|---:|---:|")
     for m in lt["methods"]:
         g = lambda k: pm([r["test"][k] for r in m["runs"]])
-        L.append(f"| {m['config']['name']} | {pm([r['val']['balanced_accuracy'] for r in m['runs']])} | {g('accuracy')} | {g('macro_f1')} | "
-                 f"{g('head_recall')} | {g('mid_recall')} | {g('tail_recall')} | {pm([r['test']['recall'][9] for r in m['runs']])} |")
+        L.append(f"| {m['config']['name']} | {pm([r['val']['balanced_accuracy'] for r in m['runs']])} | {g('accuracy')} | "
+                 f"{g('head_recall')} | {g('tail_recall')} | {pm([r['test']['recall'][9] for r in m['runs']])} |")
+    L.append("\n每個數字認對的比例 %(各種子平均):\n")
+    L.append("| 方法 | " + " | ".join(str(c) for c in range(NUM_CLASSES)) + " |\n|---|" + "---:|" * NUM_CLASSES)
+    for m in lt["methods"]:
+        rec = np.mean([r["test"]["recall"] for r in m["runs"]], axis=0) * 100
+        L.append(f"| {m['config']['name']} | " + " | ".join(f"{v:.1f}" for v in rec) + " |")
     best = lt["methods"][best_imbalance_method(lt["methods"])]["config"]["name"]
     L.append(f"\n依驗證集 balanced accuracy 選出的最佳方法:**{best}**")
     (OUT_DIR / "summary.md").write_text("\n".join(L) + "\n", encoding="utf-8")
@@ -839,7 +769,7 @@ def write_summary(res):
 def make_plots(res, data):
     plot_data_overview(data, res["part_c"])
     plot_training_comparison(res["part_a"], "Part A - modeling: architecture and regularisation", "02_modeling_comparison.png")
-    plot_lr(res["part_b"]["range_tests"], res["part_b"]["variants"])
+    plot_lr(res["part_b"]["range_test"], res["part_b"]["variants"])
     plot_training_comparison(res["part_b"]["variants"], "Part B - optimization: optimizer and LR schedule (same model, same data)", "04_optimizer_comparison.png")
     plot_final(res["final"], data)
     best = plot_imbalance(res["part_c"])
@@ -889,9 +819,10 @@ def main():
         _, counts = longtail_indices(data["y_train"], seed=0, **lt_kwargs)
         print(f"long-tailed class counts for Part C: {counts} (total {sum(counts)})")
 
-        print("\nLR range tests")
+        print("\nLR range test")
         torch.set_num_threads(min(8, os.cpu_count() or 8))
-        range_tests = lr_range_tests(data, args.quick)
+        range_test = lr_range_test(Config("lr-range", use_bn=True, dropout=0.2, augment=True), data["x_train"], data["y_train"],
+                                   steps=60 if args.quick else 300)
 
         jobs, order = build_jobs(ep_ab, ep_final, ep_lt, seeds, lt_kwargs)
         for j in jobs:
@@ -899,7 +830,7 @@ def main():
         print(f"\nTraining {len(jobs)} runs (Part A: architectures, Part B: optimizers, final model, Part C: imbalance)")
         results = run_all(jobs, device, n_workers, args.threads)
         res = assemble(results, order, jobs)
-        res["part_b"]["range_tests"] = range_tests
+        res["part_b"]["range_test"] = range_test
         res["part_c"].update(imbalance_factor=args.imbalance_factor, class_counts=counts)
         res["meta"] = dict(quick=args.quick, device=device, torch=torch.__version__, seeds=seeds, workers=n_workers,
                            threads=args.threads, minutes=(time.time() - t0) / 60)
