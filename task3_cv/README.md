@@ -161,6 +161,10 @@ MNIST 每個數字的數量差不多,所以不平衡要自己做。我讓數字 
 | C6 平衡抽樣 + augmentation | 98.54 ± 0.03 | 98.72 ± 0.10 | 99.85 ± 0.03 | 96.97 ± 0.33 | 95.14 ± 0.77 |
 | C7 Logit-adjusted loss + augmentation | 98.78 ± 0.13 | 98.93 ± 0.14 | 99.65 ± 0.08 | 97.90 ± 0.22 | 96.56 ± 0.21 |
 
+![methods](outputs/10_imbalance_methods.png)
+
+下面這張把不處理(紅)和定案的做法(藍)拆開來看每個數字的 recall。橫軸括號裡是訓練張數,越右邊越少。
+
 ![per-class recall](outputs/07_imbalance_per_class_recall.png)
 
 不處理的時候整體準確率還有 97.4%,看起來不差,但拆開來看數字 9 的 recall 只有 90.4%,頭部的數字則幾乎全對。所以這種情況只看 accuracy 會被騙,要拆開看每個類別的 recall。
@@ -176,10 +180,6 @@ MNIST 每個數字的數量差不多,所以不平衡要自己做。我讓數字 
 Focal loss 也沒用。它處理的是難分的樣本,但這裡訓練資料幾乎都分對了,問題出在類別少,不是樣本難。
 
 所以不平衡這部分我定案用 C7(logit-adjusted loss 加 augmentation),它在驗證集上最高,測試準確率 98.93%。數字 9 的 recall 從 90.4% 到 96.6%,總錯誤少了 59%。代價是頭部類別掉了一點點(99.88% 到 99.65%)。
-
-![validation curves](outputs/08_imbalance_validation_curves.png)
-
-驗證曲線在前半段很亂,各方法會互相交叉,大概到第 25 個 epoch 之後學習率降下來,順序才固定。
 
 跟用完整資料訓練的 99.64% 比,C7 還是差了 0.7%。這段差距我認為就是資料量的問題,少掉的那幾千張圖沒辦法靠 loss 補回來。
 

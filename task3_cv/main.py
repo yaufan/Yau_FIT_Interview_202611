@@ -730,33 +730,35 @@ def best_imbalance_method(methods) -> int:
 
 
 def plot_imbalance(lt):
-    """圖 07-09:Part C 各方法的逐類別 recall、驗證曲線,以及基準與最佳方法的混淆矩陣。"""
+    """圖 07-10:Part C 的結果。"""
     methods = lt["methods"]
     names = [m["config"]["name"] for m in methods]
     colors = plt.cm.tab10(np.arange(len(methods)))
-    # --- 圖 07 左:每個數字的 recall;灰色長條是該數字的訓練張數
-    fig, axes = plt.subplots(1, 2, figsize=(15, 4.8), width_ratios=[1.5, 1])
-    for m, col in zip(methods, colors):
-        rec, sd = mean_std([r["test"] for r in m["runs"]], "recall")
-        axes[0].errorbar(range(NUM_CLASSES), rec * 100, yerr=sd * 100, marker="o", ms=4, capsize=2, color=col, label=m["config"]["name"],
-                         lw=2.2 if m["config"]["name"].startswith("C1 ") else 1.2)
-    ax2 = axes[0].twinx()
-    ax2.bar(range(NUM_CLASSES), lt["class_counts"], color="grey", alpha=0.15)
-    ax2.set_yscale("log"); ax2.set_ylabel("training images per class (grey bars, log)")
-    axes[0].set(xlabel="digit (training frequency decreases from left to right)", ylabel="test recall %", title="Per-class recall on the test set (mean ± sd over seeds)")
-    axes[0].set_xticks(range(NUM_CLASSES)); axes[0].legend(fontsize=7.5, loc="lower left"); axes[0].grid(alpha=0.3)
-    # --- 圖 07 右:摘要長條圖
-    keys = [("accuracy", "accuracy"), ("macro_f1", "macro-F1"), ("head_recall", "head recall\n(0-2)"), ("tail_recall", "tail recall\n(7-9)")]
-    width = 0.8 / len(methods)
-    for i, (m, col) in enumerate(zip(methods, colors)):
-        vals = np.array([[r["test"][k] for k, _ in keys] for r in m["runs"]]) * 100
-        sd = vals.std(0, ddof=1) if len(vals) > 1 else np.zeros(len(keys))
-        axes[1].bar(np.arange(len(keys)) + i * width - 0.4 + width / 2, vals.mean(0), width, yerr=sd, color=col, capsize=1.5)
-    lo = min(min(r["test"]["tail_recall"] for r in m["runs"]) for m in methods) * 100
-    axes[1].set_ylim(max(0, lo - 3), 100.3)
-    axes[1].set_xticks(range(len(keys)), [lab for _, lab in keys]); axes[1].set_ylabel("%")
-    axes[1].set_title("Summary (same colours as on the left)"); axes[1].grid(alpha=0.3, axis="y")
+    best = best_imbalance_method(methods)
+    # --- 圖 07:每個數字的 recall,只畫不處理和定案的做法,不然線太多看不清楚
+    fig, ax = plt.subplots(figsize=(8, 4.6))
+    for i, col, label in [(0, "#C44E52", "no handling (C1)"), (best, "#4C72B0", f"final method ({names[best].split()[0]})")]:
+        rec, sd = mean_std([r["test"] for r in methods[i]["runs"]], "recall")
+        ax.errorbar(range(NUM_CLASSES), rec * 100, yerr=sd * 100, marker="o", ms=5, capsize=3, lw=2, color=col, label=label)
+    ax.set(xlabel="digit (fewer training images to the right)", ylabel="test recall %", title="Recall of each digit, long-tailed training set")
+    ax.set_xticks(range(NUM_CLASSES))
+    ax.set_xticklabels([f"{c}\n({n:,})" for c, n in enumerate(lt["class_counts"])], fontsize=8)  # 數字底下標訓練張數
+    ax.legend(fontsize=10, loc="lower left"); ax.grid(alpha=0.3)
     savefig(fig, "07_imbalance_per_class_recall.png")
+
+    # --- 圖 10:各方法的測試準確率,一個方法一條
+    fig, ax = plt.subplots(figsize=(8, 4.2))
+    acc = np.array([[r["test"]["accuracy"] for r in m["runs"]] for m in methods]) * 100
+    order = np.arange(len(methods))[::-1]
+    bar_colors = ["#4C72B0" if i == best else "#C44E52" if i == 0 else "#BBBBBB" for i in order]
+    ax.barh([names[i] for i in order], acc.mean(1)[order], xerr=acc.std(1, ddof=1)[order] if acc.shape[1] > 1 else None,
+            color=bar_colors, capsize=2)
+    for y, i in enumerate(order):
+        ax.text(acc.mean(1)[i] + (acc.std(1, ddof=1)[i] if acc.shape[1] > 1 else 0) + 0.04, y, f"{acc.mean(1)[i]:.2f}", va="center", fontsize=9)
+    ax.set_xlim(acc.mean(1).min() - 0.5, acc.mean(1).max() + 0.6)
+    ax.set(xlabel="test accuracy %", title="Long-tailed training set: test accuracy of each method")
+    ax.grid(alpha=0.3, axis="x")
+    savefig(fig, "10_imbalance_methods.png")
 
     # --- 圖 08:驗證曲線(C1b 沒有訓練過程,所以沒有曲線)
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.4))
@@ -774,7 +776,6 @@ def plot_imbalance(lt):
     savefig(fig, "08_imbalance_validation_curves.png")
 
     # --- 圖 09:基準(C1)與最佳方法的測試集混淆矩陣;「最佳」是用驗證集選的
-    best = best_imbalance_method(methods)
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.6))
     cms = [np.sum([r["test"]["confusion"] for r in methods[i]["runs"]], axis=0) for i in (0, best)]
     vmax = max(offdiag_max(cm) for cm in cms)  # 兩張圖用同一個色階
