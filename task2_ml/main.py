@@ -1,14 +1,14 @@
-"""Task 2:預測客戶流失(Exited)的機率
+"""Task 2：預測客戶流失（Exited）的機率
 
-用法:
-    python main.py          # 定案的流程:資料探索 -> 5-fold CV -> 評估 -> 輸出 test 的預測
-    python experiments.py   # 定案之前試過的模型、參數和特徵(比較表)
+用法：
+    python main.py          # 定案的流程：資料探索 -> 5-fold CV -> 評估 -> 輸出 test 的預測
+    python experiments.py   # 定案之前試過的模型、參數和特徵（比較表）
 
 輸出都在 outputs/:predictions.csv、metrics.csv / metrics.json、confusion_matrix.csv 和圖。
 
-幾個做法:
+幾個做法：
   - 指標都用 out-of-fold 的預測算
-  - early stopping 用訓練那幾份裡再切出來的 10%,不用驗證那一份
+  - early stopping 用訓練那幾份裡再切出來的 10%，不用驗證那一份
   - 每個 fold 的門檻用另外四個 fold 決定
   - test 的預測是 5 個模型的平均
 """
@@ -47,7 +47,7 @@ from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-# LightGBM 4.7 會提示 eval_set 要改名,舊版還是得用 eval_set,先把提示關掉
+# LightGBM 4.7 會提示 eval_set 要改名，舊版還是得用 eval_set，先把提示關掉
 warnings.filterwarnings("ignore", message=".*eval_set.*")
 
 SEED = 42
@@ -58,7 +58,7 @@ OUT_DIR = HERE / "outputs"
 
 TARGET = "Exited"
 ID_COL = "id"
-# 這三個欄位不放進模型,原因寫在 README
+# 這三個欄位不放進模型，原因寫在 README
 IDENTIFIERS = ["id", "CustomerId", "Surname"]
 CATEGORICAL = ["Geography", "Gender"]
 NUMERIC = [
@@ -74,7 +74,7 @@ NUMERIC = [
 
 LGB_PARAMS = dict(
     objective="binary",
-    n_estimators=3000,       # 上限,實際由 early stopping 決定
+    n_estimators=3000,       # 上限，實際由 early stopping 決定
     learning_rate=0.03,
     num_leaves=31,
     min_child_samples=100,
@@ -97,7 +97,7 @@ C_STAY, C_EXIT = "#4C72B0", "#C44E52"
 # 資料
 # --------------------------------------------------------------------------------------
 def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
-    """讀資料,順便做幾個基本檢查。"""
+    """讀資料，順便做幾個基本檢查。"""
     train = pd.read_csv(DATA_DIR / "train.csv")
     test = pd.read_csv(DATA_DIR / "test.csv")
     assert TARGET in train.columns and TARGET not in test.columns
@@ -108,18 +108,18 @@ def load_data() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def category_levels(train: pd.DataFrame, test: pd.DataFrame) -> dict[str, list]:
-    """類別欄位所有出現過的值(train + test),讓兩邊的編碼一致。"""
+    """類別欄位所有出現過的值（train + test），讓兩邊的編碼一致。"""
     return {c: sorted(set(train[c]) | set(test[c])) for c in CATEGORICAL + ["Surname"]}
 
 
 def build_features(df: pd.DataFrame, cat_levels: dict[str, list], engineered: bool = False,
                    identifiers: bool = False) -> pd.DataFrame:
-    """做特徵。每一筆只用自己的欄位,沒有用到 target 或整份資料的統計量。"""
+    """做特徵。每一筆只用自己的欄位，沒有用到 target 或整份資料的統計量。"""
     X = df[NUMERIC].copy()
     for c in CATEGORICAL:
-        # 轉成 category,LightGBM 可以直接吃
+        # 轉成 category，LightGBM 可以直接吃
         X[c] = pd.Categorical(df[c], categories=cat_levels[c])
-    if engineered:  # experiments.py 才用,試過沒有比較好
+    if engineered:  # experiments.py 才用，試過沒有比較好
         X["BalanceIsZero"] = (df["Balance"] == 0).astype(int)
         X["BalanceToSalary"] = df["Balance"] / (df["EstimatedSalary"] + 1.0)
         X["ProductsPerTenure"] = df["NumOfProducts"] / (df["Tenure"] + 1.0)
@@ -137,7 +137,7 @@ def build_features(df: pd.DataFrame, cat_levels: dict[str, list], engineered: bo
 # 模型
 # --------------------------------------------------------------------------------------
 def fit_lgbm_fold(X_tr, y_tr, seed, params=None):
-    """訓練一個 LightGBM。early stopping 用訓練資料裡再切出來的 10%,外面那份驗證資料不碰。"""
+    """訓練一個 LightGBM。early stopping 用訓練資料裡再切出來的 10%，外面那份驗證資料不碰。"""
     X_fit, X_es, y_fit, y_es = train_test_split(X_tr, y_tr, test_size=0.1, stratify=y_tr, random_state=seed)
     history: dict = {}
     model = lgb.LGBMClassifier(**{**LGB_PARAMS, **(params or {}), "random_state": seed})
@@ -157,7 +157,7 @@ def fit_lgbm_fold(X_tr, y_tr, seed, params=None):
 
 
 def make_logreg() -> Pipeline:
-    """Baseline:one-hot + 標準化 + 邏輯迴歸。NumOfProducts 也做 one-hot,因為它跟流失率不是線性關係。"""
+    """Baseline：one-hot + 標準化 + 邏輯迴歸。NumOfProducts 也做 one-hot，因為它跟流失率不是線性關係。"""
     pre = ColumnTransformer(
         [
             ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL + ["NumOfProducts"]),
@@ -168,14 +168,14 @@ def make_logreg() -> Pipeline:
 
 
 def run_cv(train: pd.DataFrame, test: pd.DataFrame | None, cat_levels, engineered=False, identifiers=False, verbose=True):
-    """Stratified K-fold。回傳 out-of-fold 的預測、test 的平均預測,和每個 fold 的模型。"""
+    """Stratified K-fold。回傳 out-of-fold 的預測、test 的平均預測，和每個 fold 的模型。"""
     y = train[TARGET].to_numpy()
     X = build_features(train, cat_levels, engineered, identifiers)
     X_test = build_features(test, cat_levels, engineered, identifiers) if test is not None else None
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
 
     oof = np.zeros(len(train))
-    fold_of = np.zeros(len(train), dtype=int)  # 每筆資料在哪個 fold,挑門檻時要用
+    fold_of = np.zeros(len(train), dtype=int)  # 每筆資料在哪個 fold，挑門檻時要用
     test_pred = np.zeros(len(test)) if test is not None else None
     models, histories, fold_auc = [], [], []
     for k, (tr_idx, va_idx) in enumerate(skf.split(X, y)):
@@ -196,7 +196,7 @@ def run_cv(train: pd.DataFrame, test: pd.DataFrame | None, cat_levels, engineere
 
 
 def run_cv_logreg(train: pd.DataFrame):
-    """Baseline 的 CV,fold 的切法跟 LightGBM 一樣。"""
+    """Baseline 的 CV，fold 的切法跟 LightGBM 一樣。"""
     y = train[TARGET].to_numpy()
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=SEED)
     oof = np.zeros(len(train))
@@ -219,7 +219,7 @@ def best_f1_threshold(y, p) -> float:
 
 
 def crossfit_labels(y, p, fold_of) -> tuple[np.ndarray, list[float]]:
-    """每個 fold 的門檻用其他 fold 的資料決定,再套到這個 fold。避免在同一批資料上又調又評。"""
+    """每個 fold 的門檻用其他 fold 的資料決定，再套到這個 fold。避免在同一批資料上又調又評。"""
     labels = np.zeros(len(y), dtype=int)
     thrs = []
     for k in np.unique(fold_of):
@@ -253,7 +253,7 @@ def ranking_metrics(y, p) -> dict:
 
 
 # --------------------------------------------------------------------------------------
-# 畫圖(圖上的字用英文,沒裝中文字型會變方塊)
+# 畫圖（圖上的字用英文，沒裝中文字型會變方塊）
 # --------------------------------------------------------------------------------------
 def savefig(fig, name):
     fig.tight_layout()
@@ -262,10 +262,10 @@ def savefig(fig, name):
 
 
 def plot_eda(train: pd.DataFrame):
-    """圖 01-04:資料探索。"""
+    """圖 01-04：資料探索。"""
     rate = train[TARGET].mean()
 
-    # 圖 01:target 的分布
+    # 圖 01：target 的分布
     fig, ax = plt.subplots(figsize=(4.5, 3.6))
     counts = train[TARGET].value_counts().sort_index()
     bars = ax.bar(["Stayed (0)", "Exited (1)"], counts.values, color=[C_STAY, C_EXIT])
@@ -276,7 +276,7 @@ def plot_eda(train: pd.DataFrame):
     ax.set_title("Target distribution (train)")
     savefig(fig, "01_target_distribution.png")
 
-    # 圖 02:各欄位的流失率,虛線是整體平均
+    # 圖 02：各欄位的流失率，虛線是整體平均
     cats = ["Geography", "Gender", "NumOfProducts", "IsActiveMember", "HasCrCard", "Tenure"]
     fig, axes = plt.subplots(2, 3, figsize=(13, 7))
     for ax, c in zip(axes.ravel(), cats):
@@ -285,7 +285,7 @@ def plot_eda(train: pd.DataFrame):
         bars = ax.bar(labels, g["mean"], color=C_EXIT, alpha=0.85)
         ax.axhline(rate, color="k", ls="--", lw=1, label=f"overall {rate:.1%}")
         for b, (m, n) in zip(bars, g.values):
-            txt = f"{m:.0%}\nn={int(n):,}" if len(g) <= 4 else f"{m:.0%}"  # Tenure 太多根,標人數會疊在一起
+            txt = f"{m:.0%}\nn={int(n):,}" if len(g) <= 4 else f"{m:.0%}"  # Tenure 太多根，標人數會疊在一起
             ax.text(b.get_x() + b.get_width() / 2, m, txt, ha="center", va="bottom", fontsize=7)
         ax.set_ylim(0, min(1.0, g["mean"].max() * 1.3 + 0.05))
         ax.set_title(f"Exit rate by {c}")
@@ -293,7 +293,7 @@ def plot_eda(train: pd.DataFrame):
         ax.legend(fontsize=8)
     savefig(fig, "02_exit_rate_by_category.png")
 
-    # 圖 03:數值欄位的分布
+    # 圖 03：數值欄位的分布
     nums = ["Age", "CreditScore", "Balance", "EstimatedSalary"]
     fig, axes = plt.subplots(1, 4, figsize=(16, 3.8))
     for ax, c in zip(axes, nums):
@@ -306,11 +306,11 @@ def plot_eda(train: pd.DataFrame):
     fig.suptitle("Numeric features by class (each class normalised to area 1)")
     savefig(fig, "03_numeric_distributions.png")
 
-    # 圖 04:年齡和產品數一起看
+    # 圖 04：年齡和產品數一起看
     fig, ax = plt.subplots(figsize=(7, 4.2))
     age_bin = pd.cut(train["Age"], bins=[17, 25, 30, 35, 40, 45, 50, 55, 60, 70, 95])
     for n_prod, sub in train.groupby("NumOfProducts"):
-        if len(sub) < 1000:  # 4 個產品的人太少,不畫
+        if len(sub) < 1000:  # 4 個產品的人太少，不畫
             continue
         g = sub.groupby(age_bin.loc[sub.index], observed=True)[TARGET].mean()
         ax.plot([iv.mid for iv in g.index], g.values, marker="o", label=f"{n_prod} product(s), n={len(sub):,}")
@@ -322,7 +322,7 @@ def plot_eda(train: pd.DataFrame):
 
 
 def plot_roc_pr(y, preds: dict[str, np.ndarray]):
-    """圖 05:ROC 和 PR 曲線。"""
+    """圖 05：ROC 和 PR 曲線。"""
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.6))
     for name, p in preds.items():
         fpr, tpr, _ = roc_curve(y, p)
@@ -340,7 +340,7 @@ def plot_roc_pr(y, preds: dict[str, np.ndarray]):
 
 
 def plot_confusion(y, labels_by_name: dict[str, np.ndarray]):
-    """圖 06:confusion matrix,列是實際、欄是預測。"""
+    """圖 06：confusion matrix，列是實際、欄是預測。"""
     fig, axes = plt.subplots(1, len(labels_by_name), figsize=(5.2 * len(labels_by_name), 4.4))
     for ax, (name, lab) in zip(np.atleast_1d(axes), labels_by_name.items()):
         cm = confusion_matrix(y, lab)
@@ -358,7 +358,7 @@ def plot_confusion(y, labels_by_name: dict[str, np.ndarray]):
 
 
 def plot_threshold_sweep(y, p, thr_tuned):
-    """圖 07:門檻變動時 precision / recall / F1 的變化。"""
+    """圖 07：門檻變動時 precision / recall / F1 的變化。"""
     thr = np.linspace(0.02, 0.98, 97)
     prec = [precision_score(y, p >= t, zero_division=0) for t in thr]
     rec = [recall_score(y, p >= t) for t in thr]
@@ -377,7 +377,7 @@ def plot_threshold_sweep(y, p, thr_tuned):
 
 
 def plot_calibration_and_scores(y, p, test_pred):
-    """圖 08:校準曲線、兩類的分數分布、train 和 test 的預測分布。"""
+    """圖 08：校準曲線、兩類的分數分布、train 和 test 的預測分布。"""
     fig, axes = plt.subplots(1, 3, figsize=(16, 4.4))
     frac, mean_pred = calibration_curve(y, p, n_bins=15, strategy="quantile")
     axes[0].plot([0, 1], [0, 1], "k--", lw=1, label="perfect calibration")
@@ -401,7 +401,7 @@ def plot_calibration_and_scores(y, p, test_pred):
 
 
 def plot_learning_curves(histories):
-    """圖 09:學習曲線,每個 fold 一條。"""
+    """圖 09：學習曲線，每個 fold 一條。"""
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.2))
     for metric, ax in zip(["binary_logloss", "auc"], axes):
         for k, h in enumerate(histories):
@@ -410,7 +410,7 @@ def plot_learning_curves(histories):
         ax.set(xlabel="boosting iteration", ylabel=metric, title=f"LightGBM learning curves - {metric} (5 folds)")
         ax.legend(fontsize=8)
         ax.grid(alpha=0.3)
-    # 前面幾棵樹 AUC 變化太大,y 軸只看第 20 棵之後
+    # 前面幾棵樹 AUC 變化太大，y 軸只看第 20 棵之後
     lo = min(min(h["early_stop"]["auc"][20:]) for h in histories)
     hi = max(max(h["train"]["auc"]) for h in histories)
     axes[1].set_ylim(lo - 0.005, hi + 0.003)
@@ -418,7 +418,7 @@ def plot_learning_curves(histories):
 
 
 def plot_importance(models, X, y, fold_of):
-    """圖 10:特徵重要度。左邊是 permutation(在驗證那份資料上把欄位打亂,看 AUC 掉多少),右邊是 gain。"""
+    """圖 10：特徵重要度。左邊是 permutation（在驗證那份資料上把欄位打亂，看 AUC 掉多少），右邊是 gain。"""
     names = list(X.columns)
     gain = np.mean([m.booster_.feature_importance(importance_type="gain") for m in models], axis=0)
     gain = gain / gain.sum()
@@ -540,7 +540,7 @@ def main():
     imp.to_csv(OUT_DIR / "feature_importance.csv", index=False, float_format="%.6f")
 
     print("[6/6] Writing test predictions")
-    # Exited 是機率,Exited_label 是用門檻切過的 0/1
+    # Exited 是機率，Exited_label 是用門檻切過的 0/1
     sub = pd.DataFrame({ID_COL: test[ID_COL], TARGET: test_pred, f"{TARGET}_label": (test_pred >= thr_final).astype(int)})
     assert len(sub) == len(test) and sub[TARGET].between(0, 1).all()
     sub.to_csv(OUT_DIR / "predictions.csv", index=False, float_format="%.6f")

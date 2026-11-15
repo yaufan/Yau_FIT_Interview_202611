@@ -1,17 +1,17 @@
-"""Task 3:MNIST 數字分類
+"""Task 3：MNIST 數字分類
 
-分三組實驗:
-  Part A  模型:LeNet-5 -> DigitNet -> 加 BN -> 加 dropout 和 augmentation
-  Part B  優化:SGD、momentum、AdamW,固定學習率和 one-cycle 排程
-  Part C  類別不平衡:做一份 100:1 的訓練集,比較 class weight、平衡抽樣、加 augmentation
+分三組實驗：
+  Part A  模型：LeNet-5 -> DigitNet -> 加 BN -> 加 dropout 和 augmentation
+  Part B  優化：SGD、momentum、AdamW，固定學習率和 one-cycle 排程
+  Part C  類別不平衡：做一份 100:1 的訓練集，比較 class weight、平衡抽樣、加 augmentation
 
-用法:
-    python main.py              # 全部跑完(第一次會下載 MNIST)
-    python main.py --quick      # 快速測試,結果寫到 outputs_quick/
+用法：
+    python main.py              # 全部跑完（第一次會下載 MNIST）
+    python main.py --quick      # 快速測試，結果寫到 outputs_quick/
     python main.py --plots-only # 只重畫圖
 
-資料切法:60k 訓練資料切成 54k train / 6k val,選設定只看 val,test 只在最後報數字用。
-每個模型都用最後一個 epoch 的結果,不挑 checkpoint。
+資料切法：60k 訓練資料切成 54k train / 6k val，選設定只看 val，test 只在最後報數字用。
+每個模型都用最後一個 epoch 的結果，不挑 checkpoint。
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ MNIST_MEAN, MNIST_STD = 0.1307, 0.3081
 NUM_CLASSES = 10
 # Part C 看結果用的分組
 HEAD, MID, TAIL = [0, 1, 2], [3, 4, 5, 6], [7, 8, 9]
-# one-cycle 的最高學習率,從 LR range test 看出來的
+# one-cycle 的最高學習率，從 LR range test 看出來的
 PEAK_LR = 3e-3
 
 
@@ -50,12 +50,12 @@ PEAK_LR = 3e-3
 # 資料
 # ======================================================================================
 def load_mnist(device):
-    """下載 MNIST,標準化後整包放到 device 上。資料很小,這樣比用 DataLoader 快。"""
+    """下載 MNIST，標準化後整包放到 device 上。資料很小，這樣比用 DataLoader 快。"""
     tr = datasets.MNIST(DATA_DIR, train=True, download=True)
     te = datasets.MNIST(DATA_DIR, train=False, download=True)
 
     def prep(ds):
-        # 轉 float、標準化,補上 channel 維度
+        # 轉 float、標準化，補上 channel 維度
         x = ds.data.float().div(255.0).sub(MNIST_MEAN).div(MNIST_STD).unsqueeze(1)
         return x, ds.targets.clone()
 
@@ -77,7 +77,7 @@ def load_mnist(device):
 
 
 def longtail_indices(y: torch.Tensor, n_max: int, imbalance_factor: float, seed: int = 0):
-    """長尾訓練集的 index。第 c 類留 n_max * (1/IF)^(c/9) 張,所以 0 最多、9 最少。"""
+    """長尾訓練集的 index。第 c 類留 n_max * (1/IF)^(c/9) 張，所以 0 最多、9 最少。"""
     rng = np.random.default_rng(seed)
     y_np = y.cpu().numpy()
     counts = [int(round(n_max * (1.0 / imbalance_factor) ** (c / (NUM_CLASSES - 1)))) for c in range(NUM_CLASSES)]
@@ -86,17 +86,17 @@ def longtail_indices(y: torch.Tensor, n_max: int, imbalance_factor: float, seed:
 
 
 def random_affine(x: torch.Tensor, gen: torch.Generator, max_rot_deg=10.0, max_shift_px=2.0, max_scale=0.10):
-    """隨機旋轉、平移、縮放,每張圖各自抽參數。不做翻轉,數字翻過來就不對了。"""
+    """隨機旋轉、平移、縮放，每張圖各自抽參數。不做翻轉，數字翻過來就不對了。"""
     b = x.size(0)
     r = torch.rand(b, 4, generator=gen).to(x.device) * 2 - 1  # [-1, 1] 的亂數
     ang = r[:, 0] * math.radians(max_rot_deg)
     scale = 1.0 + r[:, 1] * max_scale
-    # affine_grid 的座標是 [-1, 1],所以 1 pixel = 1/14
+    # affine_grid 的座標是 [-1, 1]，所以 1 pixel = 1/14
     tx, ty = r[:, 2] * (max_shift_px / 14.0), r[:, 3] * (max_shift_px / 14.0)
     cos, sin = torch.cos(ang) * scale, torch.sin(ang) * scale
     theta = torch.stack([torch.stack([cos, -sin, tx], 1), torch.stack([sin, cos, ty], 1)], 1)
     grid = F.affine_grid(theta, list(x.shape), align_corners=False)
-    # 超出去的地方用邊緣補,MNIST 的邊緣就是背景
+    # 超出去的地方用邊緣補，MNIST 的邊緣就是背景
     return F.grid_sample(x, grid, mode="bilinear", padding_mode="border", align_corners=False)
 
 
@@ -120,7 +120,7 @@ class LeNet5(nn.Module):
 
 
 class DigitNet(nn.Module):
-    """三段 [conv3x3 + BN + ReLU] x2,中間 max-pool,最後 global average pooling 接 linear。
+    """三段 [conv3x3 + BN + ReLU] x2，中間 max-pool，最後 global average pooling 接 linear。
     為什麼這樣設計寫在 README。"""
 
     def __init__(self, widths=(16, 32, 64), use_bn=True, dropout=0.2):
@@ -181,8 +181,8 @@ def build_model(cfg: Config) -> nn.Module:
 
 
 def build_optimizer(cfg: Config, model: nn.Module):
-    """weight decay 只加在 conv / linear 的 weight,BN 和 bias 不加。
-    AdamW 的 decay 是直接乘在權重上,跟 SGD 的 L2 大小不能直接比,所以預設值分開(5e-2 和 5e-4)。"""
+    """weight decay 只加在 conv / linear 的 weight，BN 和 bias 不加。
+    AdamW 的 decay 是直接乘在權重上，跟 SGD 的 L2 大小不能直接比，所以預設值分開（5e-2 和 5e-4）。"""
     wd = cfg.weight_decay if cfg.weight_decay is not None else (5e-2 if cfg.optimizer == "adamw" else 5e-4)
     decay = [p for p in model.parameters() if p.ndim > 1]
     no_decay = [p for p in model.parameters() if p.ndim <= 1]
@@ -201,7 +201,7 @@ def build_criterion(cfg: Config, class_counts: torch.Tensor):
     if cfg.loss == "ce":
         return lambda logits, y: F.cross_entropy(logits, y)
     if cfg.loss == "weighted_ce":
-        # 權重跟類別數量成反比,少的類別錯了罰比較重
+        # 權重跟類別數量成反比，少的類別錯了罰比較重
         w = 1.0 / class_counts.float()
         w = w / w.sum() * NUM_CLASSES
         return lambda logits, y: F.cross_entropy(logits, y, weight=w)
@@ -242,7 +242,7 @@ def classification_metrics(logits: torch.Tensor, y: torch.Tensor) -> dict:
 
 
 def train(cfg: Config, x_tr, y_tr, x_val, y_val, seed: int, verbose=True):
-    """訓練一個模型,回傳 (model, history)。用最後一個 epoch 的模型,val 只拿來記錄曲線。"""
+    """訓練一個模型，回傳 (model, history)。用最後一個 epoch 的模型，val 只拿來記錄曲線。"""
     torch.manual_seed(seed)
     device = x_tr.device
     model = build_model(cfg).to(device)
@@ -251,8 +251,8 @@ def train(cfg: Config, x_tr, y_tr, x_val, y_val, seed: int, verbose=True):
     steps_per_epoch = math.ceil(n / cfg.batch_size)
     sched = None
     if cfg.schedule == "onecycle":
-        # 前 25% 的 step 把學習率拉到最高,之後用 cosine 降到接近 0。
-        # momentum 不跟著變,這樣跟固定學習率的對照組就只差在排程
+        # 前 25% 的 step 把學習率拉到最高，之後用 cosine 降到接近 0。
+        # momentum 不跟著變，這樣跟固定學習率的對照組就只差在排程
         sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=cfg.lr, total_steps=cfg.epochs * steps_per_epoch,
                                                     pct_start=0.25, anneal_strategy="cos", cycle_momentum=False)
     class_counts = torch.bincount(y_tr, minlength=NUM_CLASSES)
@@ -260,12 +260,12 @@ def train(cfg: Config, x_tr, y_tr, x_val, y_val, seed: int, verbose=True):
 
     gen = torch.Generator().manual_seed(seed)  # batch 順序和 augmentation 用
     if cfg.sampler == "class_balanced":
-        # 讓每個類別被抽到的機率一樣,少的類別會重複抽。一個 epoch 的張數不變
+        # 讓每個類別被抽到的機率一樣，少的類別會重複抽。一個 epoch 的張數不變
         w = (1.0 / class_counts.float())[y_tr].cpu()
         sampler = WeightedRandomSampler(w, num_samples=n, replacement=True, generator=gen)
     else:
         sampler = RandomSampler(range(n), generator=gen)
-    # 資料已經在記憶體裡,只需要 sampler 給 index
+    # 資料已經在記憶體裡，只需要 sampler 給 index
     batches = BatchSampler(sampler, cfg.batch_size, drop_last=False)
 
     hist = dict(epoch=[], train_loss=[], train_acc=[], val_loss=[], val_acc=[], val_bal_acc=[], val_tail_recall=[],
@@ -291,7 +291,7 @@ def train(cfg: Config, x_tr, y_tr, x_val, y_val, seed: int, verbose=True):
             tot_loss += loss.item() * len(yb)
             tot_correct += (logits.argmax(1) == yb).sum().item()
             tot_n += len(yb)
-        # train_loss / train_acc 是訓練中累計的(有 augmentation 和 dropout),一開始會比 val 差
+        # train_loss / train_acc 是訓練中累計的（有 augmentation 和 dropout），一開始會比 val 差
         val = classification_metrics(predict_logits(model, x_val), y_val)
         hist["epoch"].append(epoch)
         hist["train_loss"].append(tot_loss / tot_n)
@@ -310,7 +310,7 @@ def train(cfg: Config, x_tr, y_tr, x_val, y_val, seed: int, verbose=True):
 
 
 def lr_range_test(cfg: Config, x_tr, y_tr, lr_min=1e-5, lr_max=1.0, steps=300, seed=0):
-    """LR range test:學習率每個 step 乘一個倍數往上調,記錄 loss。只用訓練集。"""
+    """LR range test：學習率每個 step 乘一個倍數往上調，記錄 loss。只用訓練集。"""
     torch.manual_seed(seed)
     model = build_model(cfg).to(x_tr.device)
     opt = build_optimizer(replace(cfg, lr=lr_min), model)
@@ -338,11 +338,11 @@ def lr_range_test(cfg: Config, x_tr, y_tr, lr_min=1e-5, lr_max=1.0, steps=300, s
 # ======================================================================================
 # 實驗
 #
-# 每次訓練包成一個 job(dict)交給 run_job。CPU 上會開多個 process 一起跑,
+# 每次訓練包成一個 job（dict）交給 run_job。CPU 上會開多個 process 一起跑，
 # 這種小模型一個 process 開太多 thread 也不會變快。
 # ======================================================================================
 def slim(hist: dict) -> dict:
-    """每個 step 的紀錄太長,平均壓到 400 點左右再存。"""
+    """每個 step 的紀錄太長，平均壓到 400 點左右再存。"""
     h = dict(hist)
     k = max(1, len(h["step_loss"]) // 400)
     if k > 1:
@@ -372,13 +372,13 @@ def _init_worker(threads):
 
 
 def run_job(job: dict) -> dict:
-    """跑一次訓練,回傳可以存成 JSON 的結果。"""
+    """跑一次訓練，回傳可以存成 JSON 的結果。"""
     t0 = time.time()
     data = get_data(job["device"], job.get("subset"))
     cfg = Config(**job["cfg"])
     x_tr, y_tr = data["x_train"], data["y_train"]
     if job.get("longtail"):
-        # Part C 用長尾訓練集。seed 固定,所有方法用的是同一份
+        # Part C 用長尾訓練集。seed 固定，所有方法用的是同一份
         idx, counts = longtail_indices(y_tr, seed=0, **job["longtail"])
         x_tr, y_tr = x_tr[idx], y_tr[idx]
     model, hist = train(cfg, x_tr, y_tr, data["x_val"], data["y_val"], seed=job["seed"], verbose=job.get("verbose", False))
@@ -389,12 +389,12 @@ def run_job(job: dict) -> dict:
                val=classification_metrics(val_logits, y_val), test=classification_metrics(logits, y_test))
     out["test_acc"] = out["test"]["accuracy"]
     if job.get("final"):
-        # 記下信心最高的錯誤,畫圖用
+        # 記下信心最高的錯誤，畫圖用
         conf, pred = logits.softmax(1).max(1)
         wrong = (pred != y_test).nonzero().squeeze(1)
         wrong = wrong[conf[wrong].argsort(descending=True)][:24]
         out["wrong"] = dict(index=wrong.tolist(), pred=pred[wrong].tolist(), true=y_test[wrong].tolist())
-        # 轉成 CPU 再存,沒有 GPU 也能 load
+        # 轉成 CPU 再存，沒有 GPU 也能 load
         torch.save({k: v.cpu() for k, v in model.state_dict().items()}, Path(job["out_dir"]) / "digitnet_final.pt")
     out["seconds"] = time.time() - t0
     return out
@@ -403,14 +403,14 @@ def run_job(job: dict) -> dict:
 def build_jobs(ep_ab, ep_lt, seeds, lt_kwargs):
     """列出所有要跑的訓練。"""
     reg = dict(use_bn=True, dropout=0.2, augment=True)  # 最後用的設定
-    # Part A:一次加一個東西
+    # Part A：一次加一個東西
     part_a = [
         Config("A1 LeNet-5 (baseline)", model="lenet", use_bn=False, dropout=0.0, augment=False, epochs=ep_ab),
         Config("A2 DigitNet, no BN", use_bn=False, dropout=0.0, augment=False, epochs=ep_ab),
         Config("A3 DigitNet + BN", use_bn=True, dropout=0.0, augment=False, epochs=ep_ab),
         Config("A4 DigitNet + BN + dropout + augmentation", epochs=ep_ab, **reg),
     ]
-    # Part B:模型固定用 A4。B3 和 B4 的最高學習率一樣,只差在有沒有排程
+    # Part B：模型固定用 A4。B3 和 B4 的最高學習率一樣，只差在有沒有排程
     b = dict(epochs=ep_ab, **reg)
     part_b = [
         Config("B1 SGD, constant LR 0.05", optimizer="sgd", lr=0.05, schedule="const", **b),
@@ -418,13 +418,14 @@ def build_jobs(ep_ab, ep_lt, seeds, lt_kwargs):
         Config("B3 AdamW, constant LR 3e-3", optimizer="adamw", lr=PEAK_LR, schedule="const", **b),
         Config("B4 AdamW, one-cycle (peak 3e-3)", optimizer="adamw", lr=PEAK_LR, schedule="onecycle", **b),
     ]
-    # Part C:不平衡的訓練集
+    # Part C：不平衡的訓練集
     lt = dict(use_bn=True, dropout=0.2, epochs=ep_lt)
     part_c = [
         Config("C1 No handling", augment=False, **lt),
         Config("C2 Class weight", augment=False, loss="weighted_ce", **lt),
         Config("C3 Balanced sampling", augment=False, sampler="class_balanced", **lt),
-        Config("C4 Balanced sampling + augmentation", augment=True, sampler="class_balanced", **lt),
+        Config("C4 Augmentation only", augment=True, **lt),
+        Config("C5 Balanced sampling + augmentation", augment=True, sampler="class_balanced", **lt),
     ]
     jobs = []
     for group, cfgs, extra in [("A", part_a, {}), ("B", part_b, {}), ("C", part_c, dict(longtail=lt_kwargs))]:
@@ -432,14 +433,14 @@ def build_jobs(ep_ab, ep_lt, seeds, lt_kwargs):
             for s in seeds:
                 job = dict(group=group, cfg=asdict(cfg), seed=s, **extra)
                 if cfg is part_a[-1] and s == seeds[0]:
-                    job["final"] = True  # 定案的模型就是 A4,第一個 seed 的權重存下來
+                    job["final"] = True  # 定案的模型就是 A4，第一個 seed 的權重存下來
                 jobs.append(job)
     order = dict(A=[c.name for c in part_a], B=[c.name for c in part_b], C=[c.name for c in part_c])
     return jobs, order
 
 
 def run_all(jobs, device, n_workers, threads):
-    """跑所有 job,久的先跑。"""
+    """跑所有 job，久的先跑。"""
     for j in jobs:
         j["device"] = device
     # 粗估每個 job 要跑多久
@@ -485,14 +486,14 @@ def assemble(results, order, jobs):
         return e
 
     res = dict(part_a=[entry(n) for n in order["A"]], part_b=dict(variants=[entry(n) for n in order["B"]]))
-    final_name = order["A"][-1]  # 定案的模型 = A4,取存了權重的那一次(第一個 seed)
+    final_name = order["A"][-1]  # 定案的模型 = A4，取存了權重的那一次（第一個 seed）
     res["final"] = dict(config=cfg_of[final_name], params=count_params(DigitNet()), **by_name[final_name][0])
     res["part_c"] = dict(methods=[entry(n) for n in order["C"]])
     return res
 
 
 # ======================================================================================
-# 畫圖(圖上的字用英文,沒裝中文字型會變方塊)
+# 畫圖（圖上的字用英文，沒裝中文字型會變方塊）
 # ======================================================================================
 def savefig(fig, name):
     fig.tight_layout()
@@ -512,12 +513,12 @@ def mean_std(runs, key):
 
 
 def plot_data_overview(data, lt):
-    """圖 01:訓練樣本、資料增強的效果、原始與長尾的類別分布。"""
+    """圖 01：訓練樣本、資料增強的效果、原始與長尾的類別分布。"""
     x, y = data["x_train"].cpu(), data["y_train"].cpu()
     fig = plt.figure(figsize=(14, 8))
     gs = fig.add_gridspec(2, 2, width_ratios=[1.15, 1], height_ratios=[3.3, 1])
     gs_right = gs[:, 1].subgridspec(2, 1, height_ratios=[1, 2.2], hspace=0.35)
-    # 樣本格:10 個類別 x 每類 12 張
+    # 樣本格：10 個類別 x 每類 12 張
     ax = fig.add_subplot(gs[0, 0])
     rows = [denorm(x[(y == c).nonzero().squeeze(1)[:12]]).squeeze(1) for c in range(NUM_CLASSES)]
     grid = torch.cat([torch.cat(list(r), 1) for r in rows], 0)
@@ -525,7 +526,7 @@ def plot_data_overview(data, lt):
     ax.set_yticks(np.arange(NUM_CLASSES) * 28 + 14, [str(c) for c in range(NUM_CLASSES)])
     ax.set_xticks([])
     ax.set_title("Training samples (one row per class)")
-    # 資料增強:每條的第一張是原圖,後面 7 張是隨機仿射變換後的結果
+    # 資料增強：每條的第一張是原圖，後面 7 張是隨機仿射變換後的結果
     ax = fig.add_subplot(gs[1, 0])
     gen = torch.Generator().manual_seed(0)
     base = x[[int((y == c).nonzero()[0]) for c in (2, 4, 7, 9)]]
@@ -552,7 +553,7 @@ def plot_data_overview(data, lt):
 
 
 def plot_training_comparison(entries, title, fname):
-    """圖 02 / 04。左邊訓練 loss,右邊驗證錯誤率。線是各 seed 的平均,色帶是最小到最大。"""
+    """圖 02 / 04。左邊訓練 loss，右邊驗證錯誤率。線是各 seed 的平均，色帶是最小到最大。"""
     fig, axes = plt.subplots(1, 2, figsize=(14, 4.8))
     for e in entries:
         runs = [r["history"] for r in e["runs"]]
@@ -577,13 +578,13 @@ def plot_training_comparison(entries, title, fname):
 
 
 def plot_lr(range_test, variants):
-    """圖 03。左:LR range test;右:Part B 用到的學習率排程。"""
+    """圖 03。左：LR range test；右：Part B 用到的學習率排程。"""
     fig, axes = plt.subplots(1, 2, figsize=(13, 4.2))
     axes[0].plot(range_test["lr"], range_test["loss"], label="AdamW")
     axes[0].axvline(PEAK_LR, color="C3", ls="--", lw=1, label=f"chosen peak LR ({PEAK_LR:g})")
     axes[0].set(xscale="log", xlabel="learning rate (log scale)", ylabel="training loss", title="LR range test", ylim=(0, 3))
     axes[0].legend(fontsize=9); axes[0].grid(alpha=0.3, which="both")
-    # 排程一樣的畫成同一條線(例如 B1、B2),不然會疊在一起
+    # 排程一樣的畫成同一條線（例如 B1、B2），不然會疊在一起
     groups = {}
     for e in variants:
         c = e["config"]
@@ -600,7 +601,7 @@ def plot_lr(range_test, variants):
 
 
 def offdiag_max(cm):
-    """非對角線的最大值,用來統一色階。"""
+    """非對角線的最大值，用來統一色階。"""
     off = np.asarray(cm, dtype=float)
     off = off / off.sum(1, keepdims=True)
     np.fill_diagonal(off, 0)
@@ -608,7 +609,7 @@ def offdiag_max(cm):
 
 
 def plot_confusion(ax, cm, title, normalise=True, vmax=None):
-    """對角線是 recall %,其他格子是錯誤張數。vmax 讓多張圖的色階一致。"""
+    """對角線是 recall %，其他格子是錯誤張數。vmax 讓多張圖的色階一致。"""
     cm = np.asarray(cm, dtype=float)
     shown = cm / cm.sum(1, keepdims=True) if normalise else cm
     off = shown.copy()
@@ -628,7 +629,7 @@ def plot_confusion(ax, cm, title, normalise=True, vmax=None):
 
 
 def plot_final(final, data):
-    """圖 05:最後模型的學習曲線。圖 06:測試集的 confusion matrix 和信心最高的錯誤。"""
+    """圖 05：最後模型的學習曲線。圖 06：測試集的 confusion matrix 和信心最高的錯誤。"""
     h, t = final["history"], final["test"]
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.4))
     axes[0].plot(h["epoch"], h["train_loss"], marker="o", ms=3, label="train (augmented, dropout on)")
@@ -670,11 +671,11 @@ def best_imbalance_method(methods) -> int:
 
 
 def plot_imbalance(lt):
-    """圖 07-09:Part C 的結果。"""
+    """圖 07-09：Part C 的結果。"""
     methods = lt["methods"]
     names = [m["config"]["name"] for m in methods]
     best = best_imbalance_method(methods)
-    # --- 圖 07:各方法的測試準確率
+    # --- 圖 07：各方法的測試準確率
     fig, ax = plt.subplots(figsize=(8, 3.2))
     acc = np.array([[r["test"]["accuracy"] for r in m["runs"]] for m in methods]) * 100
     sd = acc.std(1, ddof=1) if acc.shape[1] > 1 else np.zeros(len(methods))
@@ -688,7 +689,7 @@ def plot_imbalance(lt):
     ax.grid(alpha=0.3, axis="x")
     savefig(fig, "07_imbalance_methods.png")
 
-    # --- 圖 08:每個數字認對的比例,不處理和定案的做法並排
+    # --- 圖 08：每個數字認對的比例，不處理和定案的做法並排
     fig, ax = plt.subplots(figsize=(10, 5))
     xs = np.arange(NUM_CLASSES)
     for k, (i, col, label) in enumerate([(0, "#C44E52", "no handling"), (best, "#4C72B0", "final method")]):
@@ -704,7 +705,7 @@ def plot_imbalance(lt):
     ax.legend(fontsize=10, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2, frameon=False); ax.grid(alpha=0.3, axis="y")
     savefig(fig, "08_imbalance_per_digit.png")
 
-    # --- 圖 09:不處理和定案做法的 confusion matrix(定案是用驗證集選的)
+    # --- 圖 09：不處理和定案做法的 confusion matrix（定案是用驗證集選的）
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.6))
     cms = [np.sum([r["test"]["confusion"] for r in methods[i]["runs"]], axis=0) for i in (0, best)]
     vmax = max(offdiag_max(cm) for cm in cms)  # 兩張圖用同一個色階
@@ -717,7 +718,7 @@ def plot_imbalance(lt):
 
 
 # ======================================================================================
-# 結果表格(summary.md),README 的數字從這裡來
+# 結果表格（summary.md），README 的數字從這裡來
 # ======================================================================================
 def pm(values, scale=100, digits=2):
     """平均 ± 標準差。"""
@@ -728,38 +729,38 @@ def pm(values, scale=100, digits=2):
 def write_summary(res):
     L = []
     meta = res["meta"]
-    L.append(f"由 `python main.py`{' --quick(快速測試,數字沒有意義)' if meta['quick'] else ''} 產生;"
-             f"裝置 {meta['device']}({meta.get('workers', 1)} 個行程,torch {meta['torch']}),共 {meta['minutes']:.1f} 分鐘。\n")
+    L.append(f"由 `python main.py`{' --quick（快速測試，數字沒有意義）' if meta['quick'] else ''} 產生；"
+             f"裝置 {meta['device']}（{meta.get('workers', 1)} 個行程，torch {meta['torch']}），共 {meta['minutes']:.1f} 分鐘。\n")
     ns = len(res["part_a"][0]["runs"])
-    L.append(f"### Part A - 模型設計({res['part_a'][0]['config']['epochs']} epochs,AdamW + one-cycle,{ns} 個種子的平均 ± 標準差)\n")
+    L.append(f"### Part A - 模型設計（{res['part_a'][0]['config']['epochs']} epochs，AdamW + one-cycle，{ns} 個種子的平均 ± 標準差）\n")
     L.append("| 模型 | 參數量 | 驗證準確率 % | 測試準確率 % | 測試錯誤數 / 10,000 |\n|---|---:|---:|---:|---:|")
     for e in res["part_a"]:
         ta = [r["test_acc"] for r in e["runs"]]
         L.append(f"| {e['config']['name']} | {e['params']:,} | {pm([r['val_acc'] for r in e['runs']])} | {pm(ta)} | {np.mean([(1 - a) * 1e4 for a in ta]):.0f} |")
-    L.append(f"\n### Part B - 優化(DigitNet,{res['part_b']['variants'][0]['config']['epochs']} epochs,{ns} 個種子的平均 ± 標準差)\n")
+    L.append(f"\n### Part B - 優化（DigitNet，{res['part_b']['variants'][0]['config']['epochs']} epochs，{ns} 個種子的平均 ± 標準差）\n")
     L.append("| 優化器 / 學習率排程 | 第 1 個 epoch 後驗證準確率 % | 最終驗證準確率 % | 測試準確率 % |\n|---|---:|---:|---:|")
     for e in res["part_b"]["variants"]:
         L.append(f"| {e['config']['name']} | {pm([r['history']['val_acc'][0] for r in e['runs']])} | {pm([r['val_acc'] for r in e['runs']])} | {pm([r['test_acc'] for r in e['runs']])} |")
     f = res["final"]
-    L.append(f"\n### 定案的模型(A4 的設定,存下權重的那一次,seed {f['seed']})\n")
-    L.append(f"- 參數量:{f['params']:,}\n- 驗證準確率:{f['val_acc'] * 100:.2f}%\n- **測試準確率:{f['test']['accuracy'] * 100:.2f}%**"
-             f"(10,000 張錯 {int(round((1 - f['test']['accuracy']) * 1e4))} 張),macro-F1 {f['test']['macro_f1'] * 100:.2f}%")
-    L.append("- 各數字的 recall %:" + "、".join(f"{c}: {r * 100:.1f}" for c, r in enumerate(f["test"]["recall"])))
+    L.append(f"\n### 定案的模型（A4 的設定，存下權重的那一次，seed {f['seed']}）\n")
+    L.append(f"- 參數量：{f['params']:,}\n- 驗證準確率：{f['val_acc'] * 100:.2f}%\n- **測試準確率：{f['test']['accuracy'] * 100:.2f}%**"
+             f"（10,000 張錯 {int(round((1 - f['test']['accuracy']) * 1e4))} 張），macro-F1 {f['test']['macro_f1'] * 100:.2f}%")
+    L.append("- 各數字的 recall %：" + "、".join(f"{c}: {r * 100:.1f}" for c, r in enumerate(f["test"]["recall"])))
     lt = res["part_c"]
-    L.append(f"\n### Part C - 類別不平衡(各類訓練張數 {lt['class_counts']},{lt['methods'][0]['config']['epochs']} epochs,"
-             f"{len(lt['methods'][0]['runs'])} 個種子的平均 ± 標準差;「驗證」欄用來選方法,其餘各欄是官方測試集)\n")
-    L.append("| 方法 | 驗證 balanced acc. % | 測試準確率 % | 張數多的數字(0-2)認對 % | 張數少的數字(7-9)認對 % | 數字 9 認對 % |\n|---|---:|---:|---:|---:|---:|")
+    L.append(f"\n### Part C - 類別不平衡（各類訓練張數 {lt['class_counts']}，{lt['methods'][0]['config']['epochs']} epochs，"
+             f"{len(lt['methods'][0]['runs'])} 個種子的平均 ± 標準差；「驗證」欄用來選方法，其餘各欄是官方測試集）\n")
+    L.append("| 方法 | 驗證 balanced acc. % | 測試準確率 % | 張數多的數字（0-2）認對 % | 張數少的數字（7-9）認對 % | 數字 9 認對 % |\n|---|---:|---:|---:|---:|---:|")
     for m in lt["methods"]:
         g = lambda k: pm([r["test"][k] for r in m["runs"]])
         L.append(f"| {m['config']['name']} | {pm([r['val']['balanced_accuracy'] for r in m['runs']])} | {g('accuracy')} | "
                  f"{g('head_recall')} | {g('tail_recall')} | {pm([r['test']['recall'][9] for r in m['runs']])} |")
-    L.append("\n每個數字認對的比例 %(各種子平均):\n")
+    L.append("\n每個數字認對的比例 %（各種子平均）：\n")
     L.append("| 方法 | " + " | ".join(str(c) for c in range(NUM_CLASSES)) + " |\n|---|" + "---:|" * NUM_CLASSES)
     for m in lt["methods"]:
         rec = np.mean([r["test"]["recall"] for r in m["runs"]], axis=0) * 100
         L.append(f"| {m['config']['name']} | " + " | ".join(f"{v:.1f}" for v in rec) + " |")
     best = lt["methods"][best_imbalance_method(lt["methods"])]["config"]["name"]
-    L.append(f"\n依驗證集 balanced accuracy 選出的最佳方法:**{best}**")
+    L.append(f"\n依驗證集 balanced accuracy 選出的最佳方法：**{best}**")
     (OUT_DIR / "summary.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     print("\n" + "\n".join(L))
 
@@ -784,7 +785,7 @@ def main():
     ap.add_argument("--workers", type=int, default=0, help="parallel training processes (0 = auto: cores/threads on CPU, 1 on GPU)")
     ap.add_argument("--threads", type=int, default=4, help="CPU threads per training process (when several processes are used)")
     args = ap.parse_args()
-    if hasattr(sys.stdout, "reconfigure"):  # summary 有中文,避免 Windows 終端機印不出來
+    if hasattr(sys.stdout, "reconfigure"):  # summary 有中文，避免 Windows 終端機印不出來
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     global OUT_DIR
     if args.quick:  # 不要蓋掉正式結果
@@ -792,16 +793,16 @@ def main():
     OUT_DIR.mkdir(exist_ok=True)
 
     if args.device == "auto":
-        # 舊版 PyTorch 的 MPS 不支援 grid_sample 的 border padding,所以不自動選 mps
+        # 舊版 PyTorch 的 MPS 不支援 grid_sample 的 border padding，所以不自動選 mps
         device = "cuda" if torch.cuda.is_available() else "cpu"
     else:
         device = args.device
 
-    # CPU 每 4 核開一個 process;GPU 預設 1 個,可以用 --workers 指定
+    # CPU 每 4 核開一個 process；GPU 預設 1 個，可以用 --workers 指定
     n_workers = args.workers or (max(1, (os.cpu_count() or 4) // args.threads) if device == "cpu" else 1)
     print(f"device: {device} | torch {torch.__version__} | {n_workers} worker process(es) x {args.threads} threads")
     subset = 6000 if args.quick else None
-    data = get_data(device, subset)  # 先下載好,不然子行程會同時去抓
+    data = get_data(device, subset)  # 先下載好，不然子行程會同時去抓
     print({k: tuple(v.shape) for k, v in data.items() if k.startswith("x_")})
 
     if args.plots_only:
@@ -812,7 +813,7 @@ def main():
         if args.quick:
             ep_ab, ep_lt, seeds, n_max = 1, 2, [0], 500
         else:
-            # 長尾的資料比較少,所以多跑幾個 epoch
+            # 長尾的資料比較少，所以多跑幾個 epoch
             ep_ab, ep_lt, seeds, n_max = 15, 30, [0, 1, 2], 5000
         lt_kwargs = dict(n_max=n_max, imbalance_factor=args.imbalance_factor)
         _, counts = longtail_indices(data["y_train"], seed=0, **lt_kwargs)

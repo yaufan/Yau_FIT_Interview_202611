@@ -1,9 +1,9 @@
 """定案之前試過的做法。
 
-用法:
+用法：
     python experiments.py
 
-每個做法都用跟 main.py 一樣的 5-fold 切法,比 out-of-fold 的 AUC / log loss / Brier。
+每個做法都用跟 main.py 一樣的 5-fold 切法，比 out-of-fold 的 AUC / log loss / Brier。
 結果存在 outputs/experiments.csv 和 outputs/11_experiments.png。
 """
 from __future__ import annotations
@@ -25,7 +25,7 @@ import main as M
 
 
 def to_numeric(X: pd.DataFrame) -> pd.DataFrame:
-    """category 欄位轉成整數代碼,random forest 要用。"""
+    """category 欄位轉成整數代碼，random forest 要用。"""
     X = X.copy()
     for c in X.columns:
         if isinstance(X[c].dtype, pd.CategoricalDtype):
@@ -33,7 +33,7 @@ def to_numeric(X: pd.DataFrame) -> pd.DataFrame:
     return X
 
 
-# 每個做法是一個函式:給訓練資料和驗證資料,回傳驗證資料的預測機率
+# 每個做法是一個函式：給訓練資料和驗證資料，回傳驗證資料的預測機率
 def lgbm(params=None):
     def run(X_tr, y_tr, X_va, seed):
         model, _ = M.fit_lgbm_fold(X_tr, y_tr, seed, params)
@@ -51,7 +51,7 @@ def random_forest(X_tr, y_tr, X_va, seed):
 
 
 def xgboost(X_tr, y_tr, X_va, seed):
-    # 跟 LightGBM 一樣,從訓練資料再切 10% 做 early stopping
+    # 跟 LightGBM 一樣，從訓練資料再切 10% 做 early stopping
     a, b, ya, yb = train_test_split(X_tr, y_tr, test_size=0.1, stratify=y_tr, random_state=seed)
     m = XGBClassifier(n_estimators=3000, learning_rate=0.03, max_depth=6, min_child_weight=5, subsample=0.8,
                       colsample_bytree=0.7, reg_lambda=5.0, tree_method="hist", enable_categorical=True,
@@ -64,7 +64,7 @@ OOF = {}  # 每個做法的 out-of-fold 預測
 
 
 def score(name, group, oof, y, seconds=0.0):
-    """算指標。fold 的切法固定,所以可以直接拿 oof 重算每個 fold 的 AUC。"""
+    """算指標。fold 的切法固定，所以可以直接拿 oof 重算每個 fold 的 AUC。"""
     skf = StratifiedKFold(n_splits=M.N_SPLITS, shuffle=True, random_state=M.SEED)
     aucs = [roc_auc_score(y[va], oof[va]) for _, va in skf.split(oof, y)]
     OOF[name] = oof
@@ -101,7 +101,7 @@ def main():
     rows.append(cross_validate("LightGBM, lr 0.1", "setting", lgbm(dict(learning_rate=0.1)), X, y))
     rows.append(cross_validate("LightGBM, num_leaves 63", "setting", lgbm(dict(num_leaves=63)), X, y))
     rows.append(cross_validate("LightGBM, min_child_samples 20", "setting", lgbm(dict(min_child_samples=20)), X, y))
-    # 流失 : 留下 大約 1 : 3.7,用這個比例加權
+    # 流失 : 留下 大約 1 : 3.7，用這個比例加權
     w = float((y == 0).sum() / (y == 1).sum())
     rows.append(cross_validate("LightGBM, class weight", "setting", lgbm(dict(scale_pos_weight=w)), X, y))
 
@@ -115,7 +115,7 @@ def main():
     df = pd.DataFrame(rows)
     df.to_csv(M.OUT_DIR / "experiments.csv", index=False, float_format="%.5f")
 
-    # 圖:各做法的 AUC,誤差線是 fold 之間的標準差,虛線是定案的模型
+    # 圖：各做法的 AUC，誤差線是 fold 之間的標準差，虛線是定案的模型
     fig, ax = plt.subplots(figsize=(8.5, 4.8))
     d = df.iloc[::-1]
     colors = d["group"].map({"model": "#4C72B0", "setting": "#55A868", "features": "#8172B2", "blend": "#CCB974"})

@@ -1,6 +1,6 @@
-# 我實際跑的版本:Python 3.12、numpy 2.5.4、pandas 3.1.1、scikit-learn 1.9.1、lightgbm 4.7.0、
-# xgboost 3.4.1、matplotlib 3.11.2、torch 2.12.0 (GPU) / 2.14.1 (CPU)、torchvision 0.27.0 / 0.29.2
-# 下面的最低版本沒有一個一個測過,有問題的話請用上面的版本
+# 我實際跑的版本：Python 3.12、numpy 2.5.4、pandas 3.1.1、scikit-learn 1.9.1、lightgbm 4.7.0、
+# xgboost 3.4.1、matplotlib 3.11.2、torch 2.12.0 (GPU) / 2.14.1 （CPU）、torchvision 0.27.0 / 0.29.2
+# 下面的最低版本沒有一個一個測過，有問題的話請用上面的版本
 numpy>=1.24
 pandas>=2.0
 scikit-learn>=1.3
