@@ -1,6 +1,6 @@
-# Task 1：一般問答
+# Task 1: General Questions
 
-## 1. 建立預測模型時偏好用什麼語言？為什麼？
+## 1. What is your preferred language when building predictive models and why?
 
 Python。
 
@@ -10,7 +10,7 @@ Python。
 
 還有一點是拿來探索很方便。想看一下資料長怎樣、試一個想法行不行，幾行就可以跑出結果，不對就馬上改。做預測模型的時候大部分時間其實都在做這種來回的嘗試，所以這點對我來說很重要。
 
-## 2. 請舉一個用 SQL 擷取資料的例子
+## 2. Provide an example of when you used SQL to extract data.
 
 我做過一套給牙科醫師用的臨床照片對齊系統。系統會自動算出每張照片要轉幾度才會擺正，醫師覺得不對可以自己手動調整。有一次要改演算法，改之前我想先知道現在的版本準不準，所以要把「醫師有手動調整過的照片」撈出來，比較系統算的角度和醫師調的角度差多少。
 
@@ -60,7 +60,7 @@ ORDER BY p.patient_id, v.visit_date;
 
 只留醫師調過的照片是有原因的。沒調過的照片沒有醫師的答案可以比，如果把它們當成「系統算對了」一起算進去，準確率會被灌水。
 
-## 3. 請舉一個跟同事對做法意見不同的例子，你怎麼處理？
+## 3. Give an example of a situation where you disagreed upon an idea or solution design with a co-worker. How did you handle the case?
 
 我遇到意見不同的時候，最常見的狀況是大家會先守著自己的想法。所以我習慣的做法是先把我的看法和理由講清楚，然後換對方講，聽他是怎麼想的，最後再一起評估哪個方向比較合適。
 
@@ -72,7 +72,7 @@ ORDER BY p.patient_id, v.visit_date;
 
 看到結果之後就不用再爭了，我們決定維持用原始音檔辨識，改成在辨識出來的文字上面想辦法。
 
-## 4. 你最大的優點和缺點是什麼？對這份工作會有什麼影響？
+## 4. What are your greatest strengths and weaknesses and how will these affect your performance here?
 
 優點是我會習慣先設想下一步。
 
